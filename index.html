@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jsPsych Replay</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      #app-header {
+        background: #16213e;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid #0f3460;
+        flex-shrink: 0;
+      }
+
+      #app-header h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #e94560;
+        letter-spacing: 0.5px;
+      }
+
+      #load-btn {
+        padding: 6px 14px;
+        background: #e94560;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: background 0.2s;
+      }
+
+      #load-btn:hover {
+        background: #c73652;
+      }
+
+      #file-input {
+        display: none;
+      }
+
+      #error-banner {
+        display: none;
+        background: #5c1a1a;
+        color: #ffaaaa;
+        padding: 6px 16px;
+        font-size: 0.8rem;
+        border-bottom: 1px solid #8b2020;
+        flex-shrink: 0;
+      }
+
+      #main-layout {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* Sidebar */
+      #sidebar {
+        width: 260px;
+        background: #16213e;
+        border-right: 1px solid #0f3460;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      #sidebar-header {
+        padding: 10px 12px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #888;
+        border-bottom: 1px solid #0f3460;
+        flex-shrink: 0;
+      }
+
+      #trial-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 0;
+      }
+
+      .trial-item {
+        padding: 7px 12px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        border-left: 3px solid transparent;
+        transition: background 0.1s;
+      }
+
+      .trial-item:hover {
+        background: #1a2a4a;
+      }
+
+      .trial-item.active {
+        background: #1a2a4a;
+        border-left-color: #e94560;
+      }
+
+      .trial-item .trial-index {
+        font-weight: 600;
+        color: #e94560;
+        margin-right: 6px;
+      }
+
+      .trial-item .trial-plugin {
+        color: #aaa;
+        font-size: 0.75rem;
+      }
+
+      #trial-data-panel {
+        border-top: 1px solid #0f3460;
+        flex-shrink: 0;
+        max-height: 200px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #trial-data-header {
+        padding: 6px 12px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #888;
+        border-bottom: 1px solid #0f3460;
+        flex-shrink: 0;
+      }
+
+      #trial-data-content {
+        overflow-y: auto;
+        padding: 8px;
+        font-family: "Courier New", monospace;
+        font-size: 0.7rem;
+        color: #b0c4de;
+        line-height: 1.5;
+        flex: 1;
+      }
+
+      /* Center area: stage + player */
+      #center-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      #player-bar {
+        background: #16213e;
+        border-bottom: 1px solid #0f3460;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+
+      .player-btn {
+        background: #0f3460;
+        color: #e0e0e0;
+        border: 1px solid #1a4a80;
+        border-radius: 4px;
+        padding: 5px 10px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        transition: background 0.15s;
+      }
+
+      .player-btn:hover {
+        background: #1a4a80;
+      }
+
+      .player-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      #scrub-container {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      #scrub-bar {
+        flex: 1;
+        -webkit-appearance: none;
+        appearance: none;
+        height: 4px;
+        background: #0f3460;
+        border-radius: 2px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      #scrub-bar::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #e94560;
+        cursor: pointer;
+      }
+
+      #time-display {
+        font-size: 0.75rem;
+        color: #888;
+        min-width: 100px;
+        text-align: right;
+      }
+
+      #speed-select {
+        background: #0f3460;
+        color: #e0e0e0;
+        border: 1px solid #1a4a80;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+
+      #trial-nav {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #trial-select {
+        background: #0f3460;
+        color: #e0e0e0;
+        border: 1px solid #1a4a80;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        max-width: 160px;
+      }
+
+      /* Stage area */
+      #stage-container {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
+        background: #0d0d1a;
+        position: relative;
+      }
+
+      #stage-wrapper {
+        position: relative;
+        background: white;
+        box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      #replay-frame {
+        display: block;
+        border: none;
+      }
+
+      #stage-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      #cursor-dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(233, 69, 96, 0.8);
+        border: 2px solid white;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        transition: opacity 0.2s;
+        display: none;
+        z-index: 10;
+      }
+
+      #cursor-dot.click {
+        transform: translate(-50%, -50%) scale(1.5);
+        background: rgba(233, 69, 96, 1);
+      }
+
+      #keystroke-indicator {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 4px;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      .key-badge {
+        background: rgba(0, 0, 0, 0.75);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        padding: 3px 7px;
+        font-family: "Courier New", monospace;
+        font-size: 0.75rem;
+        animation: fadeInOut 1s ease-in-out forwards;
+      }
+
+      @keyframes fadeInOut {
+        0% { opacity: 0; transform: translateY(4px); }
+        15% { opacity: 1; transform: translateY(0); }
+        70% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      #focus-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 5;
+      }
+
+      #focus-overlay.visible {
+        display: flex;
+      }
+
+      #focus-overlay span {
+        color: white;
+        font-size: 0.9rem;
+        background: rgba(0,0,0,0.6);
+        padding: 8px 16px;
+        border-radius: 4px;
+      }
+
+      #welcome-screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: 16px;
+        color: #555;
+      }
+
+      #welcome-screen svg {
+        opacity: 0.2;
+      }
+
+      #welcome-screen p {
+        font-size: 0.9rem;
+      }
+
+      /* Empty state */
+      #no-recording {
+        display: none;
+      }
+
+      #recording-loaded {
+        display: none;
+        flex: 1;
+        overflow: hidden;
+        flex-direction: column;
+      }
+
+      body.has-recording #recording-loaded {
+        display: flex;
+      }
+
+      body.has-recording #welcome-screen {
+        display: none;
+      }
+
+      body:not(.has-recording) #player-bar {
+        display: none;
+      }
+
+      /* Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: #0f1a2e;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #1a4a80;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="app-header">
+      <h1>jsPsych Replay</h1>
+      <button id="load-btn">Load Recording…</button>
+      <input type="file" id="file-input" accept=".json" />
+    </header>
+    <div id="error-banner"></div>
+
+    <!-- Welcome screen (no recording loaded) -->
+    <div id="welcome-screen">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"/>
+        <polygon points="10,8 16,12 10,16"/>
+      </svg>
+      <p>Load a jsPsych session recording (.json) to begin replay</p>
+    </div>
+
+    <!-- Recording loaded layout -->
+    <div id="recording-loaded">
+      <div id="main-layout">
+        <aside id="sidebar">
+          <div id="sidebar-header">Trials</div>
+          <div id="trial-list"></div>
+          <div id="trial-data-panel">
+            <div id="trial-data-header">Trial Data</div>
+            <pre id="trial-data-content">(select a trial)</pre>
+          </div>
+        </aside>
+
+        <div id="center-area">
+          <div id="player-bar">
+            <div id="trial-nav">
+              <button class="player-btn" id="prev-trial-btn" title="Previous trial">&#x23EE;</button>
+              <select id="trial-select"></select>
+              <button class="player-btn" id="next-trial-btn" title="Next trial">&#x23ED;</button>
+            </div>
+            <button class="player-btn" id="restart-btn" title="Restart trial">&#x21BA;</button>
+            <button class="player-btn" id="play-pause-btn" title="Play/Pause">&#x25B6;</button>
+            <div id="scrub-container">
+              <input type="range" id="scrub-bar" min="0" max="1000" value="0" step="1" />
+              <span id="time-display">0.0s / 0.0s</span>
+            </div>
+            <select id="speed-select" title="Playback speed">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+            </select>
+          </div>
+
+          <div id="stage-container">
+            <div id="stage-wrapper">
+              <iframe
+                id="replay-frame"
+                sandbox="allow-same-origin"
+                title="Replay Stage"
+                width="800"
+                height="600"
+              ></iframe>
+              <div id="stage-overlay">
+                <div id="cursor-dot"></div>
+                <div id="keystroke-indicator"></div>
+                <div id="focus-overlay"><span>Window blurred</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
