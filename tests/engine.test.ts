@@ -17,6 +17,8 @@ function makeMinimalRecording(overrides: Partial<SessionRecording> = {}): Sessio
     viewport: { w: 800, h: 600, dpr: 1, scale: 1, offset_x: 0, offset_y: 0 },
     rng: { seed: "abc", math_random_patched: true },
     display_element_id: "jspsych-content",
+    stylesheets: [],
+    stylesheet_events: [],
     trials: [],
     viewport_changes: [],
     rng_calls: [],
@@ -97,6 +99,37 @@ describe("validate()", () => {
     const result = validate(rec);
     expect(result.trials).toHaveLength(1);
     expect(result.trials[0].plugin).toBe("html-keyboard-response");
+  });
+
+  it("backfills stylesheets and stylesheet_events when missing", () => {
+    const rec = makeMinimalRecording();
+    const obj: Record<string, unknown> = { ...rec };
+    delete obj["stylesheets"];
+    delete obj["stylesheet_events"];
+    const result = validate(obj);
+    expect(result.stylesheets).toEqual([]);
+    expect(result.stylesheet_events).toEqual([]);
+  });
+
+  it("preserves stylesheet snapshots and events on a valid recording", () => {
+    const rec = makeMinimalRecording({
+      stylesheets: [
+        { id: 1, kind: "inline", css: ".foo { color: red; }", media: null },
+        { id: 2, kind: "link", href: "/css/app.css", css: null, media: "screen" },
+      ],
+      stylesheet_events: [
+        {
+          type: "stylesheet.add",
+          t: 100,
+          sheet: { id: 3, kind: "inline", css: ".bar {}", media: null },
+        },
+        { type: "stylesheet.update", t: 200, id: 1, css: ".foo { color: blue; }" },
+        { type: "stylesheet.remove", t: 300, id: 2 },
+      ],
+    });
+    const result = validate(rec);
+    expect(result.stylesheets).toHaveLength(2);
+    expect(result.stylesheet_events).toHaveLength(3);
   });
 });
 
@@ -342,5 +375,152 @@ describe("ReplayEngine event dispatch", () => {
       onTick: () => {},
     });
     expect(() => engine.applyEventsSync([], 0)).not.toThrow();
+  });
+
+  it("applies input.value to an HTMLInputElement", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const input = doc.createElement("input");
+    input.type = "text";
+    doc.body.appendChild(input);
+    const idMap = new Map<number, Node>();
+    idMap.set(1, input);
+
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: () => {},
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "input.value", t: 0, node: 1, value: "hello world" }],
+      10
+    );
+    expect(input.value).toBe("hello world");
+  });
+
+  it("applies input.checked to a checkbox", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const cb = doc.createElement("input");
+    cb.type = "checkbox";
+    doc.body.appendChild(cb);
+    const idMap = new Map<number, Node>();
+    idMap.set(1, cb);
+
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: () => {},
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "input.checked", t: 0, node: 1, checked: true }],
+      10
+    );
+    expect(cb.checked).toBe(true);
+
+    engine.applyEventsSync(
+      [{ type: "input.checked", t: 0, node: 1, checked: false }],
+      10
+    );
+    expect(cb.checked).toBe(false);
+  });
+
+  it("applies input.select to a multi-select", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const sel = doc.createElement("select");
+    sel.multiple = true;
+    for (const v of ["a", "b", "c"]) {
+      const opt = doc.createElement("option");
+      opt.value = v;
+      sel.appendChild(opt);
+    }
+    doc.body.appendChild(sel);
+    const idMap = new Map<number, Node>();
+    idMap.set(1, sel);
+
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: () => {},
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "input.select", t: 0, node: 1, values: ["a", "c"] }],
+      10
+    );
+    expect(sel.options[0].selected).toBe(true);
+    expect(sel.options[1].selected).toBe(false);
+    expect(sel.options[2].selected).toBe(true);
+  });
+
+  it("installs and removes a stylesheet via stylesheet events", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const idMap = new Map<number, Node>();
+    const sheetMap = new Map<number, HTMLElement>();
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: () => {},
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+    const engine = new ReplayEngine(
+      doc,
+      idMap,
+      { overlay, onComplete: () => {}, onTick: () => {} },
+      sheetMap
+    );
+
+    engine.applyEventsSync(
+      [
+        {
+          type: "stylesheet.add",
+          t: 0,
+          sheet: { id: 1, kind: "inline", css: ".x { color: red; }", media: null },
+        },
+      ],
+      10
+    );
+    expect(sheetMap.has(1)).toBe(true);
+    expect(doc.head.querySelector("style")?.textContent).toBe(".x { color: red; }");
+
+    engine.applyEventsSync(
+      [{ type: "stylesheet.update", t: 0, id: 1, css: ".x { color: blue; }" }],
+      10
+    );
+    expect(doc.head.querySelector("style")?.textContent).toBe(".x { color: blue; }");
+
+    engine.applyEventsSync([{ type: "stylesheet.remove", t: 0, id: 1 }], 10);
+    expect(sheetMap.has(1)).toBe(false);
+    expect(doc.head.querySelector("style")).toBeNull();
   });
 });

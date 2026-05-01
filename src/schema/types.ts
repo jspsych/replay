@@ -20,12 +20,23 @@ export interface SessionRecording {
   viewport: ViewportState;
   rng: { seed: string | null; math_random_patched: boolean };
   display_element_id: string;
+  stylesheets: StylesheetSnapshot[];
+  stylesheet_events: StylesheetEvent[];
   trials: TrialRecording[];
   viewport_changes: ViewportChange[];
   rng_calls: RngCall[];
   ended_at_perf: number | null;
   end_reason: "finished" | "aborted" | "unload" | null;
 }
+
+export type StylesheetSnapshot =
+  | { id: number; kind: "inline"; css: string; media: string | null }
+  | { id: number; kind: "link"; href: string; css: string | null; media: string | null };
+
+export type StylesheetEvent =
+  | { type: "stylesheet.add"; t: number; sheet: StylesheetSnapshot }
+  | { type: "stylesheet.remove"; t: number; id: number }
+  | { type: "stylesheet.update"; t: number; id: number; css: string };
 
 export interface ViewportState {
   w: number;
@@ -81,7 +92,8 @@ export type RecordedEvent =
   | ClipboardRecord
   | MediaRecord
   | FocusRecord
-  | ScrollRecord;
+  | ScrollRecord
+  | CanvasSnapshot;
 
 export type DomMutation =
   | { type: "dom.add"; t: number; parent: number; before: number | null; node: DomNode }
@@ -112,7 +124,10 @@ export type InputRecord =
       mods: { ctrl: boolean; shift: boolean; alt: boolean; meta: boolean };
       repeat: boolean;
       target: number | null;
-    };
+    }
+  | { type: "input.value"; t: number; node: number; value: string }
+  | { type: "input.checked"; t: number; node: number; checked: boolean }
+  | { type: "input.select"; t: number; node: number; values: string[] };
 
 export interface ClipboardRecord {
   type: "clipboard.copy" | "clipboard.cut" | "clipboard.paste";
@@ -137,6 +152,13 @@ export interface FocusRecord {
 export type ScrollRecord =
   | { type: "scroll.window"; t: number; x: number; y: number }
   | { type: "scroll.element"; t: number; node: number; x: number; y: number };
+
+export interface CanvasSnapshot {
+  type: "canvas.snapshot";
+  t: number;
+  node: number;
+  data_url: string;
+}
 
 export interface RngCall {
   t: number;
@@ -184,6 +206,15 @@ export function validate(input: unknown): SessionRecording {
 
   if (typeof obj["jspsych_version"] !== "string") {
     throw new Error("Missing or invalid field: jspsych_version (expected string)");
+  }
+
+  // Backward-compat: stylesheet fields were added later. Default to empty
+  // arrays so older recordings still load.
+  if (!Array.isArray(obj["stylesheets"])) {
+    obj["stylesheets"] = [];
+  }
+  if (!Array.isArray(obj["stylesheet_events"])) {
+    obj["stylesheet_events"] = [];
   }
 
   return input as SessionRecording;

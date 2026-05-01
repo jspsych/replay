@@ -1,6 +1,20 @@
-import type { RecordedEvent, DomNode } from "../schema/types.js";
-import { instantiateDom, removeFromMap } from "./dom.js";
+import type { RecordedEvent, DomNode, StylesheetEvent } from "../schema/types.js";
+import {
+  instantiateDom,
+  removeFromMap,
+  installStylesheet,
+  updateStylesheet,
+  removeStylesheet,
+} from "./dom.js";
 import type { OverlayController } from "../ui/overlay.js";
+
+/**
+ * The engine schedules and dispatches both per-trial events
+ * (`RecordedEvent`) and session-level stylesheet events
+ * (`StylesheetEvent`). They share the `type` and `t` discriminators, so they
+ * can be merged into a single timeline by the caller.
+ */
+export type SchedulableEvent = RecordedEvent | StylesheetEvent;
 
 export interface EngineCallbacks {
   overlay: OverlayController;
@@ -22,18 +36,25 @@ export class ReplayEngine {
   private speed = 1;
 
   private readonly idMap: Map<number, Node>;
+  private readonly sheetMap: Map<number, HTMLElement>;
   private readonly iframeDoc: Document;
   private readonly callbacks: EngineCallbacks;
 
-  constructor(iframeDoc: Document, idMap: Map<number, Node>, callbacks: EngineCallbacks) {
+  constructor(
+    iframeDoc: Document,
+    idMap: Map<number, Node>,
+    callbacks: EngineCallbacks,
+    sheetMap: Map<number, HTMLElement> = new Map()
+  ) {
     this.iframeDoc = iframeDoc;
     this.idMap = idMap;
+    this.sheetMap = sheetMap;
     this.callbacks = callbacks;
   }
 
   /** Schedule all events from `fromElapsed` onwards, playing at `speed`. */
   scheduleEvents(
-    events: RecordedEvent[],
+    events: SchedulableEvent[],
     duration: number,
     fromElapsed: number,
     speed: number
@@ -89,7 +110,7 @@ export class ReplayEngine {
     this.cancelAll();
   }
 
-  resume(events: RecordedEvent[], duration: number, speed: number): void {
+  resume(events: SchedulableEvent[], duration: number, speed: number): void {
     this.scheduleEvents(events, duration, this.startElapsed, speed);
   }
 
@@ -113,7 +134,7 @@ export class ReplayEngine {
    * to the seek point without scheduling timeouts.
    * After this call the engine is paused at targetMs.
    */
-  applyEventsSync(events: RecordedEvent[], targetMs: number): void {
+  applyEventsSync(events: SchedulableEvent[], targetMs: number): void {
     this.cancelAll();
     this.startElapsed = targetMs;
     for (const ev of events) {
@@ -123,7 +144,7 @@ export class ReplayEngine {
     }
   }
 
-  private applyEvent(ev: RecordedEvent): void {
+  private applyEvent(ev: SchedulableEvent): void {
     try {
       this.dispatchEvent(ev);
     } catch (err) {
@@ -131,7 +152,7 @@ export class ReplayEngine {
     }
   }
 
-  private dispatchEvent(ev: RecordedEvent): void {
+  private dispatchEvent(ev: SchedulableEvent): void {
     switch (ev.type) {
       case "dom.add": {
         const parentNode = this.idMap.get(ev.parent);
@@ -267,8 +288,67 @@ export class ReplayEngine {
         console.info(`[replay] media event: ${ev.type}`, ev);
         break;
 
+      case "input.value": {
+        const el = this.idMap.get(ev.node);
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          el.value = ev.value;
+        } else if (el instanceof HTMLSelectElement) {
+          el.value = ev.value;
+        }
+        break;
+      }
+
+      case "input.checked": {
+        const el = this.idMap.get(ev.node);
+        if (el instanceof HTMLInputElement) {
+          el.checked = ev.checked;
+        }
+        break;
+      }
+
+      case "input.select": {
+        const el = this.idMap.get(ev.node);
+        if (el instanceof HTMLSelectElement) {
+          const wanted = new Set(ev.values);
+          for (const opt of Array.from(el.options)) {
+            opt.selected = wanted.has(opt.value);
+          }
+        }
+        break;
+      }
+
+      case "canvas.snapshot": {
+        const el = this.idMap.get(ev.node);
+        if (!(el instanceof HTMLCanvasElement)) break;
+        const ctx = el.getContext("2d");
+        if (!ctx) break;
+        const img = new Image();
+        img.onload = () => {
+          try {
+            ctx.clearRect(0, 0, el.width, el.height);
+            ctx.drawImage(img, 0, 0);
+          } catch {
+            // ignore (e.g., tainted canvas in strict modes)
+          }
+        };
+        img.src = ev.data_url;
+        break;
+      }
+
+      case "stylesheet.add":
+        installStylesheet(ev.sheet, this.iframeDoc, this.sheetMap);
+        break;
+
+      case "stylesheet.update":
+        updateStylesheet(ev.id, ev.css, this.sheetMap);
+        break;
+
+      case "stylesheet.remove":
+        removeStylesheet(ev.id, this.sheetMap);
+        break;
+
       default:
-        console.warn("[replay] Unknown event type:", (ev as RecordedEvent).type);
+        console.warn("[replay] Unknown event type:", (ev as { type: string }).type);
         break;
     }
   }

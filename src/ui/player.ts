@@ -1,7 +1,16 @@
-import type { TrialRecording, SessionRecording } from "../schema/types.js";
+import type {
+  TrialRecording,
+  SessionRecording,
+  StylesheetEvent,
+} from "../schema/types.js";
 import { ReplayEngine } from "../replay/engine.js";
 import { ViewportManager } from "../replay/viewport.js";
-import { instantiateDom } from "../replay/dom.js";
+import {
+  instantiateDom,
+  installStylesheet,
+  updateStylesheet,
+  removeStylesheet,
+} from "../replay/dom.js";
 import type { OverlayController } from "./overlay.js";
 
 export interface PlayerCallbacks {
@@ -22,6 +31,7 @@ export class Player {
   private currentListIndex = 0;
   private engine: ReplayEngine | null = null;
   private currentIdMap: Map<number, Node> = new Map();
+  private currentSheetMap: Map<number, HTMLElement> = new Map();
   private speed = 1;
 
   // UI elements
@@ -137,6 +147,9 @@ export class Player {
       this.viewport.applyViewport(this.recording.viewport);
     }
 
+    // Reset and rebuild stylesheets up to the trial start
+    this.resetStylesheetsAt(trial.t_start ?? 0);
+
     // Reconstruct initial DOM
     this.currentIdMap = new Map();
     const container = this.viewport.clearContent();
@@ -146,17 +159,22 @@ export class Player {
     }
 
     // Set up engine
-    this.engine = new ReplayEngine(this.viewport.iframeDoc, this.currentIdMap, {
-      overlay: this.overlay,
-      onComplete: () => {
-        this.setPlayPauseIcon(false);
+    this.engine = new ReplayEngine(
+      this.viewport.iframeDoc,
+      this.currentIdMap,
+      {
+        overlay: this.overlay,
+        onComplete: () => {
+          this.setPlayPauseIcon(false);
+        },
+        onTick: (elapsed) => {
+          const duration = this.trialDuration(trial);
+          this.updateScrub(elapsed, duration);
+          this.callbacks.onTick(elapsed, duration);
+        },
       },
-      onTick: (elapsed) => {
-        const duration = this.trialDuration(trial);
-        this.updateScrub(elapsed, duration);
-        this.callbacks.onTick(elapsed, duration);
-      },
-    });
+      this.currentSheetMap
+    );
 
     const duration = this.trialDuration(trial);
     this.updateScrub(0, duration);
@@ -168,6 +186,46 @@ export class Player {
   private trialDuration(trial: TrialRecording): number {
     if (trial.t_dom_ready == null || trial.t_end == null) return 0;
     return trial.t_end - trial.t_dom_ready;
+  }
+
+  /**
+   * Tear down any installed stylesheets, then reinstall the recording's
+   * initial snapshot and replay every session-level stylesheet event with
+   * `t <= upToT`. Used at trial selection / seek so the iframe matches the
+   * stylesheet state recorded at that point in the session.
+   *
+   * Mid-trial stylesheet events (t_dom_ready < t < t_end) are applied here
+   * but not yet scheduled across trial playback time.
+   */
+  private resetStylesheetsAt(upToT: number): void {
+    const doc = this.viewport.iframeDoc;
+    for (const id of Array.from(this.currentSheetMap.keys())) {
+      removeStylesheet(id, this.currentSheetMap);
+    }
+
+    for (const sheet of this.recording.stylesheets ?? []) {
+      installStylesheet(sheet, doc, this.currentSheetMap);
+    }
+
+    const events: StylesheetEvent[] = this.recording.stylesheet_events ?? [];
+    for (const ev of events) {
+      if (ev.t > upToT) break;
+      this.applyStylesheetEvent(ev);
+    }
+  }
+
+  private applyStylesheetEvent(ev: StylesheetEvent): void {
+    switch (ev.type) {
+      case "stylesheet.add":
+        installStylesheet(ev.sheet, this.viewport.iframeDoc, this.currentSheetMap);
+        break;
+      case "stylesheet.update":
+        updateStylesheet(ev.id, ev.css, this.currentSheetMap);
+        break;
+      case "stylesheet.remove":
+        removeStylesheet(ev.id, this.currentSheetMap);
+        break;
+    }
   }
 
   private currentTrial(): TrialRecording | null {
@@ -221,6 +279,10 @@ export class Player {
 
     this.engine?.cancelAll();
 
+    // Reset stylesheets to the state at trial-start (mid-trial stylesheet
+    // changes are not yet replayed — see selectTrial)
+    this.resetStylesheetsAt(trial.t_start ?? 0);
+
     // Re-instantiate initial DOM
     this.currentIdMap = new Map();
     const container = this.viewport.clearContent();
@@ -229,14 +291,19 @@ export class Player {
     }
 
     // Re-create engine with fresh id map
-    this.engine = new ReplayEngine(this.viewport.iframeDoc, this.currentIdMap, {
-      overlay: this.overlay,
-      onComplete: () => this.setPlayPauseIcon(false),
-      onTick: (elapsed) => {
-        this.updateScrub(elapsed, duration);
-        this.callbacks.onTick(elapsed, duration);
+    this.engine = new ReplayEngine(
+      this.viewport.iframeDoc,
+      this.currentIdMap,
+      {
+        overlay: this.overlay,
+        onComplete: () => this.setPlayPauseIcon(false),
+        onTick: (elapsed) => {
+          this.updateScrub(elapsed, duration);
+          this.callbacks.onTick(elapsed, duration);
+        },
       },
-    });
+      this.currentSheetMap
+    );
 
     // Apply all events up to the seek target synchronously
     this.engine.applyEventsSync(trial.events, clamped);
