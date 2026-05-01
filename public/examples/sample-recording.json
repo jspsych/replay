@@ -7,6 +7,15 @@
   "viewport": { "w": 800, "h": 600, "dpr": 2, "scale": 1, "offset_x": 0, "offset_y": 0 },
   "rng": { "seed": "jspsych-replay-sample", "math_random_patched": true },
   "display_element_id": "jspsych-content",
+  "stylesheets": [
+    {
+      "id": 1,
+      "kind": "inline",
+      "css": "body { background: #fafafa; color: #222; font-family: system-ui, sans-serif; } .jspsych-content { text-align: center; }",
+      "media": null
+    }
+  ],
+  "stylesheet_events": [],
   "viewport_changes": [],
   "rng_calls": [
     { "t": 12.5, "fn": "Math.random", "args": [], "result": 0.4782 },
