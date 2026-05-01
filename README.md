@@ -72,6 +72,14 @@ The replay stage is an `<iframe sandbox="allow-same-origin">` so the recorded DO
 
 ## Capturing your own recording
 
+The `record_session` option is only available in the preview build of jsPsych. Load it from the CDN:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@0c1259dfc92c869bd8ba709593a5ea07de24af95/packages/jspsych/dist/index.browser.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@0c1259dfc92c869bd8ba709593a5ea07de24af95/packages/jspsych/css/jspsych.css">
+<script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@0c1259dfc92c869bd8ba709593a5ea07de24af95/packages/plugin-html-keyboard-response/dist/index.browser.min.js"></script>
+```
+
 1. Add `record_session: true` to your `initJsPsych` call.
 2. On finish, run in the console: `copy(JSON.stringify(jsPsych.getSessionRecording()))`.
 3. Save the output as a `.json` file and open it in this app.
