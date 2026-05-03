@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Geist:wght@300..600&family=Geist+Mono:wght@400..600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -38,9 +38,14 @@
            tool state never share a color. */
         --cursor:       oklch(66% 0.16 55);
 
-        --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-        --font-body:    "Geist", ui-sans-serif, sans-serif;
-        --font-mono:    "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
+        /* IBM Plex family — chosen for its scientific-instrument heritage
+           (designed for IBM enterprise products). Plex Sans carries the chrome,
+           Plex Serif italic appears only for state moments (the wordmark verb,
+           welcome display, focus overlay). Plex Mono is reserved for tabular
+           data and code, never decorative "developer" vibes. */
+        --font-display: "IBM Plex Serif", "Iowan Old Style", Georgia, serif;
+        --font-body:    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        --font-mono:    "IBM Plex Mono", ui-monospace, "JetBrains Mono", monospace;
 
         --space-1: 4px;
         --space-2: 8px;
@@ -86,23 +91,23 @@
       }
 
       #app-header h1 {
-        font-family: var(--font-display);
-        font-size: 17px;
+        font-family: var(--font-body);
+        font-size: 18px;
         font-weight: 500;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.005em;
         color: var(--ink);
-        font-feature-settings: "ss01";
       }
 
       #app-header h1 em {
+        font-family: var(--font-display);
         font-style: italic;
         font-weight: 400;
         color: var(--ink-2);
+        margin-left: 0.15em;
       }
 
       #header-meta {
-        font-family: var(--font-mono);
-        font-size: 11.5px;
+        font-size: 13px;
         color: var(--ink-3);
         font-variant-numeric: tabular-nums;
         margin-left: auto;
@@ -155,10 +160,10 @@
 
       #welcome-content .display {
         font-family: var(--font-display);
-        font-size: clamp(40px, 6vw, 72px);
+        font-size: clamp(40px, 6vw, 68px);
         font-weight: 400;
-        line-height: 1.02;
-        letter-spacing: -0.02em;
+        line-height: 1.05;
+        letter-spacing: -0.012em;
         color: var(--ink);
         margin-bottom: var(--space-4);
       }
@@ -173,13 +178,13 @@
         font-size: 16px;
         line-height: 1.55;
         color: var(--ink-2);
-        max-width: 46ch;
+        max-width: 52ch;
         margin-bottom: var(--space-6);
       }
 
       #welcome-content .lede code {
         font-family: var(--font-mono);
-        font-size: 13.5px;
+        font-size: 13px;
         color: var(--ink);
         background: var(--paper-3);
         border: 1px solid var(--rule);
@@ -209,21 +214,20 @@
       .primary-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
       #drop-hint {
-        font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--ink-3);
       }
 
       .keyhints {
-        font-family: var(--font-mono);
-        font-size: 11.5px;
+        font-size: 13px;
         color: var(--ink-3);
         line-height: 2;
       }
 
       .keyhints kbd {
-        font-family: inherit;
-        font-size: 10.5px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 500;
         color: var(--ink-2);
         background: var(--paper);
         border: 1px solid var(--rule-strong);
@@ -244,9 +248,10 @@
         background: var(--accent-soft);
         color: var(--accent);
         font-family: var(--font-display);
+        font-style: italic;
         font-size: 22px;
-        font-weight: 500;
-        letter-spacing: -0.01em;
+        font-weight: 400;
+        letter-spacing: -0.005em;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -288,8 +293,7 @@
         align-items: baseline;
         gap: 8px;
         padding: 0 var(--space-3) var(--space-3) 0;
-        font-family: var(--font-display);
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
         color: var(--ink);
       }
@@ -368,10 +372,8 @@
         align-items: baseline;
         gap: var(--space-3);
         padding: 0 2px var(--space-2);
-        font-family: var(--font-mono);
-        font-size: 11.5px;
+        font-size: 13px;
         color: var(--ink-3);
-        font-variant-numeric: tabular-nums;
       }
 
       #stage-label .label-trial {
@@ -381,10 +383,19 @@
 
       #stage-label .label-plugin { color: var(--ink-2); }
 
-      #stage-label .label-dim { color: var(--ink-3); margin-left: auto; }
+      #stage-label .label-dim {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+        margin-left: auto;
+      }
 
       #stage-label .label-scale {
+        font-family: var(--font-mono);
+        font-size: 11px;
         color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
         padding-left: var(--space-3);
         border-left: 1px solid var(--rule);
       }
@@ -580,16 +591,15 @@
 
       #time-display {
         font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 12.5px;
         color: var(--ink-2);
         font-variant-numeric: tabular-nums;
-        min-width: 92px;
+        min-width: 96px;
         text-align: right;
       }
 
       #speed-select, #trial-select {
-        font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--ink-2);
         background: transparent;
         border: 1px solid transparent;
@@ -611,8 +621,7 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--ink-3);
         cursor: pointer;
         padding: 3px 6px;
@@ -679,7 +688,6 @@
         display: flex;
         align-items: baseline;
         gap: 8px;
-        font-family: var(--font-display);
         font-size: 13px;
         font-weight: 500;
         color: var(--ink);
@@ -691,14 +699,15 @@
         font-size: 11px;
         font-weight: 400;
         color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
       }
 
       #trial-data-content {
         overflow: auto;
         font-family: var(--font-mono);
-        font-size: 11.5px;
+        font-size: 12px;
         color: var(--ink-2);
-        line-height: 1.55;
+        line-height: 1.6;
         white-space: pre;
         padding: 0 0 8px 0;
         flex: 1;
