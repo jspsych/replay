@@ -30,7 +30,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:5173`. The sample recording in `public/examples/sample-recording.json` loads automatically.
+Open `http://localhost:5173` and use **Load Recording…** (or drag-and-drop a `.json` file onto the page) to load a recording.
 
 ## Build
 

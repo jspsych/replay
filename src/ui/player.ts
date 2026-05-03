@@ -3,10 +3,10 @@ import type {
   SessionRecording,
   StylesheetEvent,
 } from "../schema/types.js";
-import { ReplayEngine } from "../replay/engine.js";
+import { ReplayEngine, type SchedulableEvent } from "../replay/engine.js";
 import { ViewportManager } from "../replay/viewport.js";
 import {
-  instantiateDom,
+  mountInitialDom,
   installStylesheet,
   updateStylesheet,
   removeStylesheet,
@@ -33,6 +33,7 @@ export class Player {
   private currentIdMap: Map<number, Node> = new Map();
   private currentSheetMap: Map<number, HTMLElement> = new Map();
   private speed = 1;
+  private autoAdvance = false;
 
   // UI elements
   private readonly playPauseBtn: HTMLButtonElement;
@@ -43,6 +44,7 @@ export class Player {
   private readonly timeDisplay: HTMLElement;
   private readonly speedSelect: HTMLSelectElement;
   private readonly trialSelect: HTMLSelectElement;
+  private readonly autoplayCheckbox: HTMLInputElement;
 
   constructor(
     recording: SessionRecording,
@@ -58,6 +60,7 @@ export class Player {
       timeDisplay: HTMLElement;
       speedSelect: HTMLSelectElement;
       trialSelect: HTMLSelectElement;
+      autoplayCheckbox: HTMLInputElement;
     }
   ) {
     this.recording = recording;
@@ -74,6 +77,8 @@ export class Player {
     this.timeDisplay = elements.timeDisplay;
     this.speedSelect = elements.speedSelect;
     this.trialSelect = elements.trialSelect;
+    this.autoplayCheckbox = elements.autoplayCheckbox;
+    this.autoAdvance = this.autoplayCheckbox.checked;
 
     this.bindEvents();
     this.populateTrialSelect();
@@ -98,7 +103,13 @@ export class Player {
         if (!trial) return;
         const duration = this.trialDuration(trial);
         this.engine.cancelAll();
-        this.engine.scheduleEvents(trial.events, duration, elapsed, this.speed);
+        this.engine.scheduleEvents(
+          this.trialTimeline(trial),
+          duration,
+          elapsed,
+          this.speed,
+          trial.t_dom_ready ?? 0
+        );
       }
     });
 
@@ -109,6 +120,10 @@ export class Player {
       const duration = this.trialDuration(trial);
       const target = pct * duration;
       this.seekTo(target);
+    });
+
+    this.autoplayCheckbox.addEventListener("change", () => {
+      this.autoAdvance = this.autoplayCheckbox.checked;
     });
   }
 
@@ -147,16 +162,14 @@ export class Player {
       this.viewport.applyViewport(this.recording.viewport);
     }
 
-    // Reset and rebuild stylesheets up to the trial start
-    this.resetStylesheetsAt(trial.t_start ?? 0);
+    // Reset and rebuild stylesheets up to t_dom_ready. Plugins commonly inject
+    // their CSS in the t_start..t_dom_ready window, so anchoring at t_start
+    // would miss the layout-defining sheet.
+    this.resetStylesheetsAt(trial.t_dom_ready ?? trial.t_start ?? 0);
 
     // Reconstruct initial DOM
     this.currentIdMap = new Map();
-    const container = this.viewport.clearContent();
-
-    if (trial.initial_dom !== null) {
-      instantiateDom(trial.initial_dom, container, this.currentIdMap, this.viewport.iframeDoc);
-    }
+    this.mountInitialDom(trial.initial_dom);
 
     // Set up engine
     this.engine = new ReplayEngine(
@@ -164,9 +177,7 @@ export class Player {
       this.currentIdMap,
       {
         overlay: this.overlay,
-        onComplete: () => {
-          this.setPlayPauseIcon(false);
-        },
+        onComplete: () => this.handleTrialComplete(),
         onTick: (elapsed) => {
           const duration = this.trialDuration(trial);
           this.updateScrub(elapsed, duration);
@@ -183,9 +194,36 @@ export class Player {
     this.callbacks.onTrialChange(listIndex);
   }
 
+  private mountInitialDom(initialDom: TrialRecording["initial_dom"]): void {
+    const rootIsBody =
+      initialDom !== null &&
+      initialDom.kind === "element" &&
+      initialDom.tag.toLowerCase() === "body";
+    const mountPoint = this.viewport.prepareMountPoint(rootIsBody);
+    if (initialDom !== null) {
+      mountInitialDom(initialDom, mountPoint, this.currentIdMap, this.viewport.iframeDoc);
+    }
+  }
+
   private trialDuration(trial: TrialRecording): number {
     if (trial.t_dom_ready == null || trial.t_end == null) return 0;
     return trial.t_end - trial.t_dom_ready;
+  }
+
+  /**
+   * Per-trial events merged with session-level stylesheet events that fall
+   * inside this trial's playback window (t_dom_ready, t_end). Stylesheet
+   * events at or before t_dom_ready are applied as part of the snapshot in
+   * `resetStylesheetsAt`, so they're excluded here to avoid double-apply.
+   */
+  private trialTimeline(trial: TrialRecording): SchedulableEvent[] {
+    const tDomReady = trial.t_dom_ready ?? 0;
+    const tEnd = trial.t_end ?? Infinity;
+    const midTrialSheets = (this.recording.stylesheet_events ?? []).filter(
+      (e) => e.t > tDomReady && e.t < tEnd
+    );
+    if (midTrialSheets.length === 0) return trial.events;
+    return [...trial.events, ...midTrialSheets];
   }
 
   /**
@@ -232,7 +270,7 @@ export class Player {
     return this.trials[this.currentListIndex] ?? null;
   }
 
-  private togglePlayPause(): void {
+  togglePlayPause(): void {
     if (!this.engine) return;
     const trial = this.currentTrial();
     if (!trial) return;
@@ -243,28 +281,50 @@ export class Player {
       this.setPlayPauseIcon(false);
     } else {
       const elapsed = this.engine.currentElapsed();
+      const tOffset = trial.t_dom_ready ?? 0;
+      const timeline = this.trialTimeline(trial);
       // If at end, restart
       const from = elapsed >= duration ? 0 : elapsed;
       if (from === 0) {
         this.selectTrial(this.currentListIndex);
-        this.engine!.scheduleEvents(trial.events, duration, 0, this.speed);
+        this.engine!.scheduleEvents(timeline, duration, 0, this.speed, tOffset);
       } else {
-        this.engine.scheduleEvents(trial.events, duration, from, this.speed);
+        this.engine.scheduleEvents(timeline, duration, from, this.speed, tOffset);
       }
       this.setPlayPauseIcon(true);
     }
   }
 
-  private restartCurrentTrial(): void {
+  restartCurrentTrial(): void {
+    this.playTrialFromStart(this.currentListIndex);
+  }
+
+  /** Load `listIndex` and immediately start playing from t=0. */
+  private playTrialFromStart(listIndex: number): void {
+    this.selectTrial(listIndex);
     const trial = this.currentTrial();
-    if (!trial) return;
-    this.selectTrial(this.currentListIndex);
+    if (!trial || !this.engine) return;
     const duration = this.trialDuration(trial);
-    this.engine!.scheduleEvents(trial.events, duration, 0, this.speed);
+    this.engine.scheduleEvents(
+      this.trialTimeline(trial),
+      duration,
+      0,
+      this.speed,
+      trial.t_dom_ready ?? 0
+    );
     this.setPlayPauseIcon(true);
   }
 
-  private jumpTrial(delta: number): void {
+  /** Engine reached the end of the current trial. */
+  private handleTrialComplete(): void {
+    if (this.autoAdvance && this.currentListIndex < this.trials.length - 1) {
+      this.playTrialFromStart(this.currentListIndex + 1);
+    } else {
+      this.setPlayPauseIcon(false);
+    }
+  }
+
+  jumpTrial(delta: number): void {
     const next = this.currentListIndex + delta;
     if (next >= 0 && next < this.trials.length) {
       this.selectTrial(next);
@@ -279,16 +339,13 @@ export class Player {
 
     this.engine?.cancelAll();
 
-    // Reset stylesheets to the state at trial-start (mid-trial stylesheet
-    // changes are not yet replayed — see selectTrial)
-    this.resetStylesheetsAt(trial.t_start ?? 0);
+    // Reset stylesheets to the snapshot at t_dom_ready; mid-trial stylesheet
+    // events get replayed by applyEventsSync below.
+    this.resetStylesheetsAt(trial.t_dom_ready ?? trial.t_start ?? 0);
 
     // Re-instantiate initial DOM
     this.currentIdMap = new Map();
-    const container = this.viewport.clearContent();
-    if (trial.initial_dom !== null) {
-      instantiateDom(trial.initial_dom, container, this.currentIdMap, this.viewport.iframeDoc);
-    }
+    this.mountInitialDom(trial.initial_dom);
 
     // Re-create engine with fresh id map
     this.engine = new ReplayEngine(
@@ -296,7 +353,7 @@ export class Player {
       this.currentIdMap,
       {
         overlay: this.overlay,
-        onComplete: () => this.setPlayPauseIcon(false),
+        onComplete: () => this.handleTrialComplete(),
         onTick: (elapsed) => {
           this.updateScrub(elapsed, duration);
           this.callbacks.onTick(elapsed, duration);
@@ -306,7 +363,7 @@ export class Player {
     );
 
     // Apply all events up to the seek target synchronously
-    this.engine.applyEventsSync(trial.events, clamped);
+    this.engine.applyEventsSync(this.trialTimeline(trial), clamped, trial.t_dom_ready ?? 0);
 
     // Engine keeps startElapsed at clamped; it's paused
     this.updateScrub(clamped, duration);

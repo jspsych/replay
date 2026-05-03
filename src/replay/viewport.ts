@@ -2,14 +2,32 @@ import type { SessionRecording, ViewportState } from "../schema/types.js";
 
 /**
  * Manage the replay iframe: sizing, document preparation, viewport changes.
+ *
+ * Layout structure: stageContainer > stageFit > stageWrapper > iframe.
+ * - The wrapper is sized to the recording's intrinsic viewport and shrunk
+ *   via `transform: scale()` so the visible stage fits the available area
+ *   without enlarging recordings smaller than the container.
+ * - The fit element is sized to the *displayed* (post-scale) dimensions so
+ *   flex centering in the container positions the stage correctly.
  */
 export class ViewportManager {
   private readonly iframe: HTMLIFrameElement;
   private readonly recording: SessionRecording;
+  private readonly stageContainer: HTMLElement | null;
+  private readonly onScaleChange: ((scale: number) => void) | null;
+  private currentVp: ViewportState;
 
-  constructor(iframe: HTMLIFrameElement, recording: SessionRecording) {
+  constructor(
+    iframe: HTMLIFrameElement,
+    recording: SessionRecording,
+    stageContainer: HTMLElement | null = null,
+    onScaleChange: ((scale: number) => void) | null = null
+  ) {
     this.iframe = iframe;
     this.recording = recording;
+    this.stageContainer = stageContainer;
+    this.onScaleChange = onScaleChange;
+    this.currentVp = recording.viewport;
     this.applyViewport(recording.viewport);
   }
 
@@ -30,6 +48,7 @@ export class ViewportManager {
   }
 
   applyViewport(vp: ViewportState): void {
+    this.currentVp = vp;
     this.iframe.width = String(vp.w);
     this.iframe.height = String(vp.h);
     const wrapper = this.iframe.parentElement;
@@ -37,6 +56,32 @@ export class ViewportManager {
       wrapper.style.width = `${vp.w}px`;
       wrapper.style.height = `${vp.h}px`;
     }
+    this.refit();
+  }
+
+  /**
+   * Recompute the stage scale based on available area in `stageContainer`,
+   * cap at 1× (don't enlarge), and apply via transform to the wrapper plus
+   * sized dimensions to the fit element. No-op if no container was provided.
+   */
+  refit(): void {
+    if (!this.stageContainer) return;
+    const wrapper = this.iframe.parentElement;
+    const fit = wrapper?.parentElement;
+    if (!wrapper || !fit) return;
+
+    const styles = getComputedStyle(this.stageContainer);
+    const padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+    const padY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+    const availW = this.stageContainer.clientWidth - padX;
+    const availH = this.stageContainer.clientHeight - padY;
+    if (availW <= 0 || availH <= 0) return;
+
+    const scale = Math.min(availW / this.currentVp.w, availH / this.currentVp.h, 1);
+    wrapper.style.transform = `scale(${scale})`;
+    fit.style.width = `${this.currentVp.w * scale}px`;
+    fit.style.height = `${this.currentVp.h * scale}px`;
+    this.onScaleChange?.(scale);
   }
 
   /**
@@ -47,41 +92,67 @@ export class ViewportManager {
   }
 
   /**
-   * Ensure the iframe document is ready and contains #jspsych-content.
-   * Returns the container element.
+   * Ensure the iframe document has our shell (html/head/body with base CSS).
+   * Idempotent: only writes the shell once per iframe lifetime.
    */
-  ensureContent(): HTMLElement {
+  ensureShell(): void {
     const doc = this.iframe.contentDocument;
     if (!doc) throw new Error("iframe document not accessible");
+    if (doc.documentElement?.dataset["replayShell"] === "1") return;
 
-    // Write a minimal HTML shell if the document is empty
-    if (!doc.getElementById("jspsych-content")) {
-      doc.open();
-      doc.write(`<!doctype html>
-<html>
+    doc.open();
+    // html/body need height: 100% so recorded `height: 100%` styles (e.g. on
+    // jsPsych's display element) actually fill the iframe — otherwise flex
+    // centering inside .jspsych-display-element collapses to zero.
+    //
+    // No `#jspsych-content` rule here: the recorded DOM may itself contain
+    // an element with that id (jsPsych's `.jspsych-content` div sits inside
+    // `.jspsych-content-wrapper`), and any sizing rule we apply collides
+    // with the recorded centering layout.
+    doc.write(`<!doctype html>
+<html data-replay-shell="1" style="height:100%">
 <head>
 <meta charset="UTF-8"/>
 <style>
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; font-family: sans-serif; }
-  #jspsych-content { min-height: 100%; }
+  html, body { height: 100%; margin: 0; padding: 0; }
+  body { font-family: sans-serif; }
 </style>
 </head>
-<body><div id="jspsych-content"></div></body>
+<body></body>
 </html>`);
-      doc.close();
-    }
-
-    return doc.getElementById("jspsych-content") as HTMLElement;
+    doc.close();
   }
 
   /**
-   * Clear #jspsych-content and return the empty container.
+   * Prepare a container for mounting a recorded `initial_dom`.
+   * If the recorded root is `<body>`, the iframe's own body is reused: its
+   * children are cleared, its attributes are reset, and the body element is
+   * returned so the caller can apply the recorded body's attrs and append the
+   * recorded body's children directly. (Mounting the recorded body as a child
+   * of a wrapper div breaks the height: 100% chain that jsPsych centering
+   * depends on.)
+   *
+   * Otherwise a `#jspsych-content` div is created (or reused) inside body and
+   * returned, matching the legacy mount target.
    */
-  clearContent(): HTMLElement {
-    const container = this.ensureContent();
-    container.innerHTML = "";
-    return container;
+  prepareMountPoint(rootIsBody: boolean): HTMLElement {
+    this.ensureShell();
+    const doc = this.iframeDoc;
+    const body = doc.body;
+
+    while (body.firstChild) body.removeChild(body.firstChild);
+    for (const attr of Array.from(body.attributes)) {
+      body.removeAttribute(attr.name);
+    }
+
+    if (rootIsBody) {
+      return body;
+    }
+
+    const div = doc.createElement("div");
+    div.id = "jspsych-content";
+    body.appendChild(div);
+    return div;
   }
 
   get iframeDoc(): Document {

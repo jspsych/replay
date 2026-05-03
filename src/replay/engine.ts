@@ -38,6 +38,10 @@ export class ReplayEngine {
   private readonly idMap: Map<number, Node>;
   private readonly sheetMap: Map<number, HTMLElement>;
   private readonly iframeDoc: Document;
+  // Nodes live in the iframe's realm; resolve constructors against its window
+  // so `instanceof` checks succeed (parent-window constructors would return
+  // false for cross-realm instances).
+  private readonly iframeWin: Window & typeof globalThis;
   private readonly callbacks: EngineCallbacks;
 
   constructor(
@@ -47,17 +51,31 @@ export class ReplayEngine {
     sheetMap: Map<number, HTMLElement> = new Map()
   ) {
     this.iframeDoc = iframeDoc;
+    // Fall back to the parent window when the document has no associated
+    // window (e.g. `document.implementation.createHTMLDocument()` in tests).
+    // In production the iframe always has its own defaultView.
+    this.iframeWin =
+      (iframeDoc.defaultView as (Window & typeof globalThis) | null) ??
+      (globalThis as unknown as Window & typeof globalThis);
     this.idMap = idMap;
     this.sheetMap = sheetMap;
     this.callbacks = callbacks;
   }
 
-  /** Schedule all events from `fromElapsed` onwards, playing at `speed`. */
+  /**
+   * Schedule all events from `fromElapsed` onwards, playing at `speed`.
+   *
+   * Event `t` is session-relative (ms since `recording_started_at_perf`).
+   * `tOffset` rebases events into trial-relative time — pass `t_dom_ready` so
+   * `t - tOffset` is the elapsed time within this trial. `fromElapsed` and
+   * `duration` are also trial-relative.
+   */
   scheduleEvents(
     events: SchedulableEvent[],
     duration: number,
     fromElapsed: number,
-    speed: number
+    speed: number,
+    tOffset: number = 0
   ): void {
     this.cancelAll();
     this.speed = speed;
@@ -66,8 +84,9 @@ export class ReplayEngine {
     this.playing = true;
 
     for (const ev of events) {
-      if (ev.t < fromElapsed) continue;
-      const delay = (ev.t - fromElapsed) / speed;
+      const tLocal = ev.t - tOffset;
+      if (tLocal < fromElapsed) continue;
+      const delay = (tLocal - fromElapsed) / speed;
       const handle = setTimeout(() => {
         this.applyEvent(ev);
         this.callbacks.onTick(this.currentElapsed());
@@ -110,8 +129,13 @@ export class ReplayEngine {
     this.cancelAll();
   }
 
-  resume(events: SchedulableEvent[], duration: number, speed: number): void {
-    this.scheduleEvents(events, duration, this.startElapsed, speed);
+  resume(
+    events: SchedulableEvent[],
+    duration: number,
+    speed: number,
+    tOffset: number = 0
+  ): void {
+    this.scheduleEvents(events, duration, this.startElapsed, speed, tOffset);
   }
 
   cancelAll(): void {
@@ -129,16 +153,22 @@ export class ReplayEngine {
   }
 
   /**
-   * Synchronously apply all events with t <= targetMs.
+   * Synchronously apply all events with `t - tOffset <= targetMs`.
    * Used for seeking: re-instantiate the DOM then call this to fast-forward
-   * to the seek point without scheduling timeouts.
-   * After this call the engine is paused at targetMs.
+   * to the seek point without scheduling timeouts. `targetMs` is
+   * trial-relative; `tOffset` (default 0) rebases session-relative event
+   * times — pass `t_dom_ready` for per-trial events.
+   * After this call the engine is paused at `targetMs`.
    */
-  applyEventsSync(events: SchedulableEvent[], targetMs: number): void {
+  applyEventsSync(
+    events: SchedulableEvent[],
+    targetMs: number,
+    tOffset: number = 0
+  ): void {
     this.cancelAll();
     this.startElapsed = targetMs;
     for (const ev of events) {
-      if (ev.t <= targetMs) {
+      if (ev.t - tOffset <= targetMs) {
         this.applyEvent(ev);
       }
     }
@@ -183,8 +213,8 @@ export class ReplayEngine {
       }
 
       case "dom.attr": {
-        const el = this.idMap.get(ev.node) as Element | undefined;
-        if (!el || !(el instanceof Element)) return;
+        const el = this.idMap.get(ev.node);
+        if (!el || !(el instanceof this.iframeWin.Element)) return;
         if (ev.name.startsWith("on")) return; // safety
         if (ev.value === null) {
           el.removeAttribute(ev.name);
@@ -251,8 +281,8 @@ export class ReplayEngine {
         break;
 
       case "scroll.element": {
-        const el = this.idMap.get(ev.node) as HTMLElement | undefined;
-        if (el && el instanceof HTMLElement) {
+        const el = this.idMap.get(ev.node);
+        if (el && el instanceof this.iframeWin.HTMLElement) {
           el.scrollLeft = ev.x;
           el.scrollTop = ev.y;
         }
@@ -290,9 +320,10 @@ export class ReplayEngine {
 
       case "input.value": {
         const el = this.idMap.get(ev.node);
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        const W = this.iframeWin;
+        if (el instanceof W.HTMLInputElement || el instanceof W.HTMLTextAreaElement) {
           el.value = ev.value;
-        } else if (el instanceof HTMLSelectElement) {
+        } else if (el instanceof W.HTMLSelectElement) {
           el.value = ev.value;
         }
         break;
@@ -300,7 +331,7 @@ export class ReplayEngine {
 
       case "input.checked": {
         const el = this.idMap.get(ev.node);
-        if (el instanceof HTMLInputElement) {
+        if (el instanceof this.iframeWin.HTMLInputElement) {
           el.checked = ev.checked;
         }
         break;
@@ -308,7 +339,7 @@ export class ReplayEngine {
 
       case "input.select": {
         const el = this.idMap.get(ev.node);
-        if (el instanceof HTMLSelectElement) {
+        if (el instanceof this.iframeWin.HTMLSelectElement) {
           const wanted = new Set(ev.values);
           for (const opt of Array.from(el.options)) {
             opt.selected = wanted.has(opt.value);
@@ -319,7 +350,7 @@ export class ReplayEngine {
 
       case "canvas.snapshot": {
         const el = this.idMap.get(ev.node);
-        if (!(el instanceof HTMLCanvasElement)) break;
+        if (!(el instanceof this.iframeWin.HTMLCanvasElement)) break;
         const ctx = el.getContext("2d");
         if (!ctx) break;
         const img = new Image();

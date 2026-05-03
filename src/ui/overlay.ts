@@ -65,7 +65,10 @@ export function createOverlay(
 
     hide() {
       cursorEl.style.display = "none";
-      keystrokeEl.innerHTML = "";
+      // Don't clear key badges: each one self-removes after KEY_DISPLAY_MS
+      // via its own setTimeout in showKey. Letting them ride lets the
+      // keystroke that ended a trial stay visible across an auto-advance
+      // boundary instead of getting wiped when the next trial mounts.
       focusOverlayEl.classList.remove("visible");
     },
 

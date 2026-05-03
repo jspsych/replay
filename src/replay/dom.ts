@@ -27,11 +27,20 @@ export function instantiateDom(
       }
     }
 
-    // For canvas elements: resize to recorded dimensions (content is blank
-    // until a canvas.snapshot event paints it).
+    // For canvas elements: resize the drawing buffer to recorded dimensions
+    // (content is blank until a canvas.snapshot event paints it). The
+    // sandboxed iframe runs without allow-scripts; in that mode Chromium
+    // declines to treat canvas as a replaced element with intrinsic
+    // dimensions, so layout collapses to 0×0 even with CSS width/height set
+    // on a default `display: inline`. Force inline-block + pin width/height
+    // to restore visible size.
     if (node.tag.toLowerCase() === "canvas" && node.canvas_size) {
-      (el as HTMLCanvasElement).width = node.canvas_size.w;
-      (el as HTMLCanvasElement).height = node.canvas_size.h;
+      const canvas = el as HTMLCanvasElement;
+      canvas.width = node.canvas_size.w;
+      canvas.height = node.canvas_size.h;
+      canvas.style.display = "inline-block";
+      canvas.style.width = `${node.canvas_size.w}px`;
+      canvas.style.height = `${node.canvas_size.h}px`;
     }
 
     // For media elements: restore src so the element has the right shape
@@ -61,6 +70,45 @@ export function instantiateDom(
 
   parent.appendChild(liveNode);
   return liveNode;
+}
+
+/**
+ * Mount a recorded `initial_dom` tree, choosing the right strategy based on
+ * its root tag. If the root is `<body>`, attrs are applied to the iframe's
+ * existing body element (so the recorded body IS the iframe body — preserving
+ * the height: 100% chain that jsPsych centering depends on). Otherwise the
+ * tree is appended as a child of `mountPoint` like a normal subtree.
+ *
+ * `mountPoint` must already be empty (and, in the body case, must be the
+ * iframe body itself).
+ */
+export function mountInitialDom(
+  initialDom: DomNode,
+  mountPoint: HTMLElement,
+  idMap: Map<number, Node>,
+  doc: Document
+): void {
+  const isBodyRoot =
+    initialDom.kind === "element" && initialDom.tag.toLowerCase() === "body";
+
+  if (isBodyRoot) {
+    const root = initialDom as ElementNode;
+    for (const [name, value] of Object.entries(root.attrs)) {
+      if (name.startsWith("on")) continue;
+      try {
+        mountPoint.setAttribute(name, value);
+      } catch {
+        // ignore invalid attribute names
+      }
+    }
+    idMap.set(root.id, mountPoint);
+    for (const child of root.children) {
+      instantiateDom(child, mountPoint, idMap, doc);
+    }
+    return;
+  }
+
+  instantiateDom(initialDom, mountPoint, idMap, doc);
 }
 
 /**

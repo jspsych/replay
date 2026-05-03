@@ -240,6 +240,27 @@ describe("instantiateDom()", () => {
     );
   });
 
+  it("pins canvas display + width/height in CSS so the sandboxed iframe lays it out", () => {
+    // Background: with `sandbox=\"allow-same-origin\"` (no `allow-scripts`),
+    // Chromium does not treat <canvas> as a sized replaced element, so HTML
+    // width/height attrs alone collapse layout to 0×0. dom.ts pins via CSS.
+    const node: DomNode = {
+      id: 50,
+      kind: "element",
+      tag: "canvas",
+      attrs: { id: "c", width: "400", height: "300" },
+      children: [],
+      canvas_size: { w: 400, h: 300 },
+    };
+    instantiateDom(node, container, idMap, doc);
+    const canvas = idMap.get(50) as HTMLCanvasElement;
+    expect(canvas.width).toBe(400);
+    expect(canvas.height).toBe(300);
+    expect(canvas.style.display).toBe("inline-block");
+    expect(canvas.style.width).toBe("400px");
+    expect(canvas.style.height).toBe("300px");
+  });
+
   it("handles empty children array", () => {
     const node: DomNode = {
       id: 40,
@@ -522,5 +543,202 @@ describe("ReplayEngine event dispatch", () => {
     engine.applyEventsSync([{ type: "stylesheet.remove", t: 0, id: 1 }], 10);
     expect(sheetMap.has(1)).toBe(false);
     expect(doc.head.querySelector("style")).toBeNull();
+  });
+
+  it("rebases session-relative event times by tOffset on sync apply", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const el = doc.createElement("div");
+    doc.body.appendChild(el);
+    const idMap = new Map<number, Node>();
+    idMap.set(1, el);
+
+    const showKeyCalls: string[] = [];
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: (label: string) => showKeyCalls.push(label),
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    // Trial starts mid-session at t_dom_ready=8000ms; trial duration ~700ms.
+    // Without tOffset, engine would compare session t (8478) > targetMs (700)
+    // and skip the event entirely.
+    const tOffset = 8000;
+    engine.applyEventsSync(
+      [
+        {
+          type: "key.down",
+          t: 8478,
+          key: "a",
+          code: "KeyA",
+          mods: { ctrl: false, shift: false, alt: false, meta: false },
+          repeat: false,
+          target: null,
+        },
+      ],
+      700,
+      tOffset
+    );
+    expect(showKeyCalls).toEqual(["a"]);
+  });
+
+  it("rebases session-relative event times by tOffset on scheduled play", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = document.implementation.createHTMLDocument("test");
+    const idMap = new Map<number, Node>();
+
+    const showKeyCalls: string[] = [];
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: (label: string) => showKeyCalls.push(label),
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    const tOffset = 8000;
+    engine.scheduleEvents(
+      [
+        {
+          type: "key.down",
+          t: 8050, // 50ms into the trial
+          key: "x",
+          code: "KeyX",
+          mods: { ctrl: false, shift: false, alt: false, meta: false },
+          repeat: false,
+          target: null,
+        },
+      ],
+      700, // duration
+      0, // fromElapsed
+      1, // speed
+      tOffset
+    );
+
+    await new Promise((r) => setTimeout(r, 120));
+    engine.cancelAll();
+    expect(showKeyCalls).toEqual(["x"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cross-realm: nodes living in an iframe document have constructors from the
+// iframe's window, not the parent's. The engine must resolve `instanceof`
+// against the iframe realm or every input/attr/canvas/scroll handler silently
+// drops events.
+// ---------------------------------------------------------------------------
+
+describe("ReplayEngine cross-realm (iframe)", () => {
+  const overlay = {
+    moveCursor: () => {},
+    showClick: () => {},
+    showKey: () => {},
+    setBlurred: () => {},
+    hide: () => {},
+    show: () => {},
+  };
+
+  function makeIframeDoc(): Document {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument!;
+    doc.open();
+    doc.write("<!doctype html><html><head></head><body></body></html>");
+    doc.close();
+    return doc;
+  }
+
+  it("applies dom.attr to an element in an iframe realm", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = makeIframeDoc();
+    const btn = doc.createElement("button");
+    btn.setAttribute("disabled", "");
+    doc.body.appendChild(btn);
+    // Sanity: parent-realm instanceof would fail here.
+    expect(btn instanceof Element).toBe(false);
+
+    const idMap = new Map<number, Node>();
+    idMap.set(1, btn);
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "dom.attr", t: 0, node: 1, name: "disabled", value: null }],
+      10
+    );
+    expect(btn.hasAttribute("disabled")).toBe(false);
+
+    engine.applyEventsSync(
+      [{ type: "dom.attr", t: 0, node: 1, name: "disabled", value: "disabled" }],
+      10
+    );
+    expect(btn.getAttribute("disabled")).toBe("disabled");
+  });
+
+  it("applies input.value to a range slider in an iframe realm", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = makeIframeDoc();
+    const slider = doc.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "100";
+    slider.value = "50";
+    doc.body.appendChild(slider);
+    expect(slider instanceof HTMLInputElement).toBe(false);
+
+    const idMap = new Map<number, Node>();
+    idMap.set(7, slider);
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "input.value", t: 0, node: 7, value: "73" }],
+      10
+    );
+    expect(slider.value).toBe("73");
+  });
+
+  it("applies input.checked to a checkbox in an iframe realm", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+    const doc = makeIframeDoc();
+    const cb = doc.createElement("input");
+    cb.type = "checkbox";
+    doc.body.appendChild(cb);
+
+    const idMap = new Map<number, Node>();
+    idMap.set(1, cb);
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "input.checked", t: 0, node: 1, checked: true }],
+      10
+    );
+    expect(cb.checked).toBe(true);
   });
 });

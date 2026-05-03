@@ -4,69 +4,267 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>jsPsych Replay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Geist:wght@300..600&family=Geist+Mono:wght@400..600&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+      :root {
+        /* Surfaces — warm tinted near-whites, not cards or boxes */
+        --paper:        oklch(98.4% 0.004 80);
+        --paper-2:      oklch(96.4% 0.005 80);
+        --paper-3:      oklch(93.5% 0.007 80);
+        --stage:        oklch(100% 0 0);
+
+        /* Ink — warm dark grays, four levels for typographic hierarchy */
+        --ink:          oklch(22% 0.018 80);
+        --ink-2:        oklch(45% 0.014 80);
+        --ink-3:        oklch(62% 0.010 80);
+        --ink-4:        oklch(78% 0.008 80);
+
+        /* Hairlines */
+        --rule:         oklch(89% 0.008 80);
+        --rule-strong:  oklch(80% 0.010 80);
+
+        /* Accent — desaturated graphite-blue. Hue chosen to not clash with
+           common stimulus colors (red, green, yellow). Used only for state:
+           active trial, focused control, scrub-bar fill. */
+        --accent:       oklch(48% 0.085 245);
+        --accent-soft:  oklch(96% 0.018 245);
+
+        /* Cursor — distinct hue from --accent so participant cursor and
+           tool state never share a color. */
+        --cursor:       oklch(66% 0.16 55);
+
+        --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+        --font-body:    "Geist", ui-sans-serif, sans-serif;
+        --font-mono:    "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
+
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-5: 24px;
+        --space-6: 36px;
+        --space-7: 56px;
       }
 
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+
+      html, body { margin: 0; padding: 0; }
+
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #1a1a2e;
-        color: #e0e0e0;
+        font-family: var(--font-body);
+        font-size: 14px;
+        line-height: 1.5;
+        background: var(--paper-2);
+        color: var(--ink);
         height: 100vh;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
+      button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+      select { font: inherit; color: inherit; }
+
+      /* ── Header ─────────────────────────────────────────────────── */
+
       #app-header {
-        background: #16213e;
-        padding: 8px 16px;
         display: flex;
-        align-items: center;
-        gap: 12px;
-        border-bottom: 1px solid #0f3460;
+        align-items: baseline;
+        gap: var(--space-5);
+        padding: var(--space-4) var(--space-5);
         flex-shrink: 0;
+        background: var(--paper-2);
       }
 
       #app-header h1 {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #e94560;
-        letter-spacing: 0.5px;
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        font-feature-settings: "ss01";
+      }
+
+      #app-header h1 em {
+        font-style: italic;
+        font-weight: 400;
+        color: var(--ink-2);
+      }
+
+      #header-meta {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+        margin-left: auto;
       }
 
       #load-btn {
-        padding: 6px 14px;
-        background: #e94560;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.875rem;
+        font-size: 13px;
         font-weight: 500;
-        transition: background 0.2s;
+        color: var(--ink);
+        padding: 6px 14px 7px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 2px;
+        background: var(--paper);
+        transition: border-color 120ms ease, color 120ms ease;
       }
 
-      #load-btn:hover {
-        background: #c73652;
-      }
+      #load-btn:hover { border-color: var(--ink-3); }
+      #load-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-      #file-input {
-        display: none;
-      }
+      #file-input { display: none; }
+
+      /* ── Error banner ───────────────────────────────────────────── */
 
       #error-banner {
         display: none;
-        background: #5c1a1a;
-        color: #ffaaaa;
-        padding: 6px 16px;
-        font-size: 0.8rem;
-        border-bottom: 1px solid #8b2020;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        padding: 8px 24px;
+        background: oklch(96% 0.04 25);
+        color: oklch(38% 0.12 25);
+        border-top: 1px solid oklch(85% 0.06 25);
+        border-bottom: 1px solid oklch(85% 0.06 25);
         flex-shrink: 0;
       }
+
+      /* ── Welcome screen ─────────────────────────────────────────── */
+
+      #welcome-screen {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        padding: var(--space-7) var(--space-7);
+        overflow: auto;
+      }
+
+      #welcome-content {
+        max-width: 560px;
+        margin-left: clamp(var(--space-4), 8vw, 96px);
+      }
+
+      #welcome-content .display {
+        font-family: var(--font-display);
+        font-size: clamp(40px, 6vw, 72px);
+        font-weight: 400;
+        line-height: 1.02;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+        margin-bottom: var(--space-4);
+      }
+
+      #welcome-content .display em {
+        font-style: italic;
+        font-weight: 400;
+        color: var(--ink-2);
+      }
+
+      #welcome-content .lede {
+        font-size: 16px;
+        line-height: 1.55;
+        color: var(--ink-2);
+        max-width: 46ch;
+        margin-bottom: var(--space-6);
+      }
+
+      #welcome-content .lede code {
+        font-family: var(--font-mono);
+        font-size: 13.5px;
+        color: var(--ink);
+        background: var(--paper-3);
+        border: 1px solid var(--rule);
+        border-radius: 2px;
+        padding: 1px 5px;
+      }
+
+      #welcome-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        margin-bottom: var(--space-6);
+      }
+
+      .primary-btn {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--paper);
+        background: var(--ink);
+        border: 1px solid var(--ink);
+        border-radius: 2px;
+        padding: 9px 18px 10px;
+        transition: background 120ms ease;
+      }
+
+      .primary-btn:hover { background: oklch(30% 0.018 80); }
+      .primary-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      #drop-hint {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-3);
+      }
+
+      .keyhints {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--ink-3);
+        line-height: 2;
+      }
+
+      .keyhints kbd {
+        font-family: inherit;
+        font-size: 10.5px;
+        color: var(--ink-2);
+        background: var(--paper);
+        border: 1px solid var(--rule-strong);
+        border-radius: 2px;
+        padding: 1px 6px;
+        margin-right: 6px;
+      }
+
+      .keyhints span { margin-right: var(--space-5); }
+
+      /* Drop indicator: shown when a file is being dragged anywhere */
+      body.drag-over::after {
+        content: "Drop to load recording";
+        position: fixed;
+        inset: 16px;
+        border: 1.5px dashed var(--accent);
+        border-radius: 4px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 100;
+      }
+
+      /* ── Recording-loaded layout ────────────────────────────────── */
+
+      #recording-loaded {
+        display: none;
+        flex: 1;
+        overflow: hidden;
+        flex-direction: column;
+      }
+
+      body.has-recording #recording-loaded { display: flex; }
+      body.has-recording #welcome-screen { display: none; }
 
       #main-layout {
         display: flex;
@@ -74,219 +272,163 @@
         overflow: hidden;
       }
 
-      /* Sidebar */
+      /* ── Sidebar ────────────────────────────────────────────────── */
+
       #sidebar {
-        width: 260px;
-        background: #16213e;
-        border-right: 1px solid #0f3460;
+        width: 240px;
+        flex-shrink: 0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        flex-shrink: 0;
+        padding: var(--space-4) 0 var(--space-4) var(--space-5);
       }
 
       #sidebar-header {
-        padding: 10px 12px;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #888;
-        border-bottom: 1px solid #0f3460;
-        flex-shrink: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 0 var(--space-3) var(--space-3) 0;
+        font-family: var(--font-display);
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--ink);
+      }
+
+      #sidebar-header .count {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
       }
 
       #trial-list {
         flex: 1;
         overflow-y: auto;
-        padding: 4px 0;
+        padding-right: var(--space-2);
       }
 
       .trial-item {
-        padding: 7px 12px;
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        align-items: baseline;
+        gap: 8px;
+        padding: 6px 10px 6px 12px;
         cursor: pointer;
-        font-size: 0.8rem;
-        border-left: 3px solid transparent;
-        transition: background 0.1s;
+        border-left: 2px solid transparent;
+        transition: background 80ms ease;
       }
 
-      .trial-item:hover {
-        background: #1a2a4a;
-      }
+      .trial-item:hover { background: var(--paper-3); }
 
       .trial-item.active {
-        background: #1a2a4a;
-        border-left-color: #e94560;
+        background: var(--paper-3);
+        border-left-color: var(--accent);
       }
 
+      .trial-item.active .trial-plugin { color: var(--ink); font-weight: 500; }
+
       .trial-item .trial-index {
-        font-weight: 600;
-        color: #e94560;
-        margin-right: 6px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-3);
       }
 
       .trial-item .trial-plugin {
-        color: #aaa;
-        font-size: 0.75rem;
-      }
-
-      #trial-data-panel {
-        border-top: 1px solid #0f3460;
-        flex-shrink: 0;
-        max-height: 200px;
+        font-size: 13px;
+        color: var(--ink-2);
         overflow: hidden;
-        display: flex;
-        flex-direction: column;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
-      #trial-data-header {
-        padding: 6px 12px;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #888;
-        border-bottom: 1px solid #0f3460;
-        flex-shrink: 0;
-      }
+      /* ── Center area: stage + player + data ─────────────────────── */
 
-      #trial-data-content {
-        overflow-y: auto;
-        padding: 8px;
-        font-family: "Courier New", monospace;
-        font-size: 0.7rem;
-        color: #b0c4de;
-        line-height: 1.5;
-        flex: 1;
-      }
-
-      /* Center area: stage + player */
       #center-area {
         flex: 1;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+        gap: var(--space-3);
+        min-width: 0;
       }
 
-      #player-bar {
-        background: #16213e;
-        border-bottom: 1px solid #0f3460;
-        padding: 8px 16px;
+      #stage-block {
         display: flex;
-        align-items: center;
-        gap: 12px;
-        flex-shrink: 0;
-      }
-
-      .player-btn {
-        background: #0f3460;
-        color: #e0e0e0;
-        border: 1px solid #1a4a80;
-        border-radius: 4px;
-        padding: 5px 10px;
-        cursor: pointer;
-        font-size: 0.8rem;
-        transition: background 0.15s;
-      }
-
-      .player-btn:hover {
-        background: #1a4a80;
-      }
-
-      .player-btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-
-      #scrub-container {
+        flex-direction: column;
         flex: 1;
+        min-height: 0;
+      }
+
+      #stage-label {
         display: flex;
-        align-items: center;
-        gap: 8px;
+        align-items: baseline;
+        gap: var(--space-3);
+        padding: 0 2px var(--space-2);
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
       }
 
-      #scrub-bar {
-        flex: 1;
-        -webkit-appearance: none;
-        appearance: none;
-        height: 4px;
-        background: #0f3460;
-        border-radius: 2px;
-        outline: none;
-        cursor: pointer;
+      #stage-label .label-trial {
+        color: var(--ink);
+        font-weight: 500;
       }
 
-      #scrub-bar::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        background: #e94560;
-        cursor: pointer;
+      #stage-label .label-plugin { color: var(--ink-2); }
+
+      #stage-label .label-dim { color: var(--ink-3); margin-left: auto; }
+
+      #stage-label .label-scale {
+        color: var(--ink-3);
+        padding-left: var(--space-3);
+        border-left: 1px solid var(--rule);
       }
 
-      #time-display {
-        font-size: 0.75rem;
-        color: #888;
-        min-width: 100px;
-        text-align: right;
-      }
-
-      #speed-select {
-        background: #0f3460;
-        color: #e0e0e0;
-        border: 1px solid #1a4a80;
-        border-radius: 4px;
-        padding: 4px 6px;
-        font-size: 0.8rem;
-        cursor: pointer;
-      }
-
-      #trial-nav {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      #trial-select {
-        background: #0f3460;
-        color: #e0e0e0;
-        border: 1px solid #1a4a80;
-        border-radius: 4px;
-        padding: 4px 6px;
-        font-size: 0.8rem;
-        cursor: pointer;
-        max-width: 160px;
-      }
-
-      /* Stage area */
       #stage-container {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: auto;
-        background: #0d0d1a;
+        background: var(--paper-3);
+        border: 1px solid var(--rule);
         position: relative;
+        min-height: 0;
+        padding: var(--space-3);
+      }
+
+      /* #stage-fit takes the *displayed* size after scaling, so flex centering
+         in #stage-container positions the visible stage correctly. The
+         #stage-wrapper inside it keeps the recording's intrinsic dimensions
+         and is shrunk via transform: scale(). */
+      #stage-fit {
+        position: relative;
+        flex-shrink: 0;
       }
 
       #stage-wrapper {
         position: relative;
-        background: white;
-        box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
-        border-radius: 2px;
-        overflow: hidden;
+        background: var(--stage);
+        outline: 1px solid var(--rule-strong);
+        outline-offset: 0;
+        transform-origin: top left;
+        will-change: transform;
       }
 
       #replay-frame {
         display: block;
         border: none;
+        background: var(--stage);
       }
 
       #stage-overlay {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        top: 0; left: 0; right: 0; bottom: 0;
         pointer-events: none;
         overflow: hidden;
       }
@@ -296,195 +438,391 @@
         width: 12px;
         height: 12px;
         border-radius: 50%;
-        background: rgba(233, 69, 96, 0.8);
-        border: 2px solid white;
+        background: var(--cursor);
+        border: 1.5px solid var(--paper);
+        box-shadow: 0 0 0 1px var(--cursor);
         transform: translate(-50%, -50%);
         pointer-events: none;
-        transition: opacity 0.2s;
+        transition: transform 80ms ease;
         display: none;
         z-index: 10;
       }
 
-      #cursor-dot.click {
-        transform: translate(-50%, -50%) scale(1.5);
-        background: rgba(233, 69, 96, 1);
-      }
+      #cursor-dot.click { transform: translate(-50%, -50%) scale(1.5); }
 
       #keystroke-indicator {
         position: absolute;
-        bottom: 12px;
+        bottom: 32px;
         left: 50%;
         transform: translateX(-50%);
         display: flex;
-        gap: 4px;
+        gap: 10px;
         pointer-events: none;
         z-index: 10;
       }
 
       .key-badge {
-        background: rgba(0, 0, 0, 0.75);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
-        padding: 3px 7px;
-        font-family: "Courier New", monospace;
-        font-size: 0.75rem;
+        background: oklch(20% 0 0 / 0.85);
+        color: var(--paper);
+        border-radius: 6px;
+        padding: 12px 20px;
+        min-width: 36px;
+        text-align: center;
+        font-family: var(--font-mono);
+        font-size: 28px;
+        font-weight: 600;
+        line-height: 1;
+        box-shadow: 0 4px 12px oklch(0% 0 0 / 0.25);
         animation: fadeInOut 1s ease-in-out forwards;
       }
 
       @keyframes fadeInOut {
-        0% { opacity: 0; transform: translateY(4px); }
-        15% { opacity: 1; transform: translateY(0); }
-        70% { opacity: 1; }
+        0%   { opacity: 0; transform: translateY(3px); }
+        15%  { opacity: 1; transform: translateY(0); }
+        70%  { opacity: 1; }
         100% { opacity: 0; }
       }
 
       #focus-overlay {
         position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
+        inset: 0;
+        background: oklch(90% 0.005 80 / 0.6);
         display: none;
         align-items: center;
         justify-content: center;
         z-index: 5;
       }
 
-      #focus-overlay.visible {
-        display: flex;
-      }
+      #focus-overlay.visible { display: flex; }
 
       #focus-overlay span {
-        color: white;
-        font-size: 0.9rem;
-        background: rgba(0,0,0,0.6);
-        padding: 8px 16px;
-        border-radius: 4px;
+        font-family: var(--font-display);
+        font-style: italic;
+        font-size: 16px;
+        font-weight: 400;
+        color: var(--ink);
+        background: var(--paper);
+        border: 1px solid var(--rule-strong);
+        padding: 6px 14px;
+        border-radius: 2px;
       }
 
-      #welcome-screen {
+      /* ── Player bar ─────────────────────────────────────────────── */
+
+      #player-bar {
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        gap: var(--space-3);
+        flex-shrink: 0;
+        padding-top: 2px;
+      }
+
+      .player-btn {
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        height: 100%;
-        gap: 16px;
-        color: #555;
+        color: var(--ink-2);
+        border-radius: 2px;
+        transition: color 100ms ease, background 100ms ease;
+        font-size: 13px;
       }
 
-      #welcome-screen svg {
-        opacity: 0.2;
+      .player-btn:hover { background: var(--paper-3); color: var(--ink); }
+      .player-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+      .player-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      #play-pause-btn {
+        width: 36px;
+        height: 36px;
+        color: var(--ink);
+        font-size: 16px;
       }
 
-      #welcome-screen p {
-        font-size: 0.9rem;
-      }
+      #play-pause-btn:hover { background: var(--paper-3); }
 
-      /* Empty state */
-      #no-recording {
-        display: none;
-      }
-
-      #recording-loaded {
-        display: none;
+      #scrub-container {
         flex: 1;
-        overflow: hidden;
-        flex-direction: column;
-      }
-
-      body.has-recording #recording-loaded {
         display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        min-width: 0;
       }
 
-      body.has-recording #welcome-screen {
-        display: none;
+      #scrub-bar {
+        flex: 1;
+        -webkit-appearance: none;
+        appearance: none;
+        height: 2px;
+        background: var(--rule-strong);
+        outline: none;
+        cursor: pointer;
       }
 
-      body:not(.has-recording) #player-bar {
-        display: none;
+      #scrub-bar::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
       }
 
-      /* Scrollbar styling */
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+      #scrub-bar::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent);
+        border: none;
+        cursor: pointer;
       }
 
-      ::-webkit-scrollbar-track {
-        background: #0f1a2e;
+      #time-display {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+        min-width: 92px;
+        text-align: right;
       }
 
+      #speed-select, #trial-select {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-2);
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 2px;
+        padding: 3px 4px;
+        cursor: pointer;
+      }
+
+      #speed-select:hover, #trial-select:hover { border-color: var(--rule-strong); }
+      #speed-select:focus-visible, #trial-select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      #trial-nav { display: flex; align-items: center; gap: 2px; }
+      #trial-select { max-width: 240px; }
+
+      #autoplay-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-3);
+        cursor: pointer;
+        padding: 3px 6px;
+        border-radius: 2px;
+        user-select: none;
+        transition: color 100ms ease;
+      }
+
+      #autoplay-toggle:hover { color: var(--ink-2); }
+      #autoplay-toggle:has(input:checked) { color: var(--ink); }
+      #autoplay-toggle:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      #autoplay-toggle input {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 13px;
+        height: 13px;
+        margin: 0;
+        border: 1px solid var(--rule-strong);
+        border-radius: 2px;
+        background: transparent;
+        cursor: pointer;
+        position: relative;
+        flex-shrink: 0;
+        transition: background 100ms ease, border-color 100ms ease;
+      }
+
+      #autoplay-toggle input:hover { border-color: var(--ink-3); }
+
+      #autoplay-toggle input:checked {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      #autoplay-toggle input:checked::after {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: 0px;
+        width: 3px;
+        height: 7px;
+        border: solid var(--paper);
+        border-width: 0 1.5px 1.5px 0;
+        transform: rotate(45deg);
+      }
+
+      body:not(.has-recording) #player-bar { display: none; }
+
+      /* ── Trial data panel (under stage) ─────────────────────────── */
+
+      #trial-data-panel {
+        flex: 0 0 132px;
+        min-height: 60px;
+        max-height: 50vh;
+        display: flex;
+        flex-direction: column;
+        border-top: 1px solid var(--rule);
+        padding-top: var(--space-3);
+        overflow: hidden;
+        resize: vertical;
+      }
+
+      #trial-data-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-family: var(--font-display);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink);
+        padding-bottom: 6px;
+      }
+
+      #trial-data-header .meta {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--ink-3);
+      }
+
+      #trial-data-content {
+        overflow: auto;
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--ink-2);
+        line-height: 1.55;
+        white-space: pre;
+        padding: 0 0 8px 0;
+        flex: 1;
+        min-height: 60px;
+      }
+
+      /* ── Scrollbars ─────────────────────────────────────────────── */
+
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb {
-        background: #1a4a80;
-        border-radius: 3px;
+        background: oklch(85% 0.008 80);
+        border: 2px solid var(--paper-2);
+        border-radius: 6px;
+      }
+      ::-webkit-scrollbar-thumb:hover { background: oklch(75% 0.010 80); }
+
+      /* Reduced motion */
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
       }
     </style>
   </head>
   <body>
     <header id="app-header">
-      <h1>jsPsych Replay</h1>
-      <button id="load-btn">Load Recording…</button>
+      <h1>jsPsych <em>Replay</em></h1>
+      <button id="load-btn">Load Recording</button>
       <input type="file" id="file-input" accept=".json" />
+      <span id="header-meta"></span>
     </header>
     <div id="error-banner"></div>
 
     <!-- Welcome screen (no recording loaded) -->
     <div id="welcome-screen">
-      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <circle cx="12" cy="12" r="10"/>
-        <polygon points="10,8 16,12 10,16"/>
-      </svg>
-      <p>Load a jsPsych session recording (.json) to begin replay</p>
+      <div id="welcome-content">
+        <div class="display">A forensic viewer for jsPsych <em>session recordings</em>.</div>
+        <p class="lede">
+          Load a recording produced by <code>jsPsych.getSessionRecording()</code> to step
+          through every trial, scrub through input events, and inspect recorded data.
+        </p>
+        <div id="welcome-actions">
+          <button id="welcome-load-btn" class="primary-btn">Load Recording</button>
+          <span id="drop-hint">or drop a .json file anywhere on this window</span>
+        </div>
+        <div class="keyhints">
+          <span><kbd>Space</kbd>play / pause</span>
+          <span><kbd>←</kbd><kbd>→</kbd>prev / next trial</span>
+          <span><kbd>R</kbd>restart</span>
+          <span><kbd>O</kbd>open file</span>
+        </div>
+      </div>
     </div>
 
     <!-- Recording loaded layout -->
     <div id="recording-loaded">
       <div id="main-layout">
         <aside id="sidebar">
-          <div id="sidebar-header">Trials</div>
-          <div id="trial-list"></div>
-          <div id="trial-data-panel">
-            <div id="trial-data-header">Trial Data</div>
-            <pre id="trial-data-content">(select a trial)</pre>
+          <div id="sidebar-header">
+            <span>Trials</span>
+            <span class="count" id="trial-count"></span>
           </div>
+          <div id="trial-list"></div>
         </aside>
 
         <div id="center-area">
+          <div id="stage-block">
+            <div id="stage-label">
+              <span class="label-trial" id="label-trial">—</span>
+              <span class="label-plugin" id="label-plugin"></span>
+              <span class="label-dim" id="label-dim"></span>
+              <span class="label-scale" id="label-scale"></span>
+            </div>
+
+            <div id="stage-container">
+              <div id="stage-fit">
+                <div id="stage-wrapper">
+                  <iframe
+                    id="replay-frame"
+                    sandbox="allow-same-origin"
+                    title="Replay Stage"
+                    width="800"
+                    height="600"
+                  ></iframe>
+                  <div id="stage-overlay">
+                    <div id="cursor-dot"></div>
+                    <div id="keystroke-indicator"></div>
+                    <div id="focus-overlay"><span>Participant tabbed away</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div id="player-bar">
             <div id="trial-nav">
-              <button class="player-btn" id="prev-trial-btn" title="Previous trial">&#x23EE;</button>
-              <select id="trial-select"></select>
-              <button class="player-btn" id="next-trial-btn" title="Next trial">&#x23ED;</button>
+              <button class="player-btn" id="prev-trial-btn" title="Previous trial (←)" aria-label="Previous trial">&#x2039;</button>
+              <button class="player-btn" id="next-trial-btn" title="Next trial (→)" aria-label="Next trial">&#x203A;</button>
             </div>
-            <button class="player-btn" id="restart-btn" title="Restart trial">&#x21BA;</button>
-            <button class="player-btn" id="play-pause-btn" title="Play/Pause">&#x25B6;</button>
+            <button class="player-btn" id="play-pause-btn" title="Play / pause (Space)" aria-label="Play / pause">&#x25B6;</button>
+            <button class="player-btn" id="restart-btn" title="Restart trial (R)" aria-label="Restart trial">&#x21BA;</button>
             <div id="scrub-container">
-              <input type="range" id="scrub-bar" min="0" max="1000" value="0" step="1" />
-              <span id="time-display">0.0s / 0.0s</span>
+              <input type="range" id="scrub-bar" min="0" max="1000" value="0" step="1" aria-label="Scrub" />
+              <span id="time-display">0.0 / 0.0 s</span>
             </div>
-            <select id="speed-select" title="Playback speed">
+            <select id="speed-select" title="Playback speed" aria-label="Playback speed">
               <option value="0.25">0.25×</option>
               <option value="0.5">0.5×</option>
               <option value="1" selected>1×</option>
               <option value="2">2×</option>
               <option value="4">4×</option>
             </select>
+            <label id="autoplay-toggle" title="Auto-advance to next trial when this one ends">
+              <input type="checkbox" id="autoplay-checkbox" checked />
+              <span>auto-advance</span>
+            </label>
+            <select id="trial-select" title="Jump to trial" aria-label="Jump to trial"></select>
           </div>
 
-          <div id="stage-container">
-            <div id="stage-wrapper">
-              <iframe
-                id="replay-frame"
-                sandbox="allow-same-origin"
-                title="Replay Stage"
-                width="800"
-                height="600"
-              ></iframe>
-              <div id="stage-overlay">
-                <div id="cursor-dot"></div>
-                <div id="keystroke-indicator"></div>
-                <div id="focus-overlay"><span>Window blurred</span></div>
-              </div>
+          <div id="trial-data-panel">
+            <div id="trial-data-header">
+              <span>Trial data</span>
+              <span class="meta" id="trial-data-meta"></span>
             </div>
+            <pre id="trial-data-content">Select a trial to inspect its recorded data.</pre>
           </div>
         </div>
       </div>
