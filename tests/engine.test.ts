@@ -302,6 +302,7 @@ describe("ReplayEngine event dispatch", () => {
     const completeCalls: number[] = [];
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => completeCalls.push(1),
       onTick: () => {},
     });
@@ -330,6 +331,7 @@ describe("ReplayEngine event dispatch", () => {
 
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -367,6 +369,7 @@ describe("ReplayEngine event dispatch", () => {
 
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -392,6 +395,7 @@ describe("ReplayEngine event dispatch", () => {
     };
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -417,6 +421,7 @@ describe("ReplayEngine event dispatch", () => {
     };
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -447,6 +452,7 @@ describe("ReplayEngine event dispatch", () => {
     };
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -488,6 +494,7 @@ describe("ReplayEngine event dispatch", () => {
     };
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -517,7 +524,7 @@ describe("ReplayEngine event dispatch", () => {
     const engine = new ReplayEngine(
       doc,
       idMap,
-      { overlay, onComplete: () => {}, onTick: () => {} },
+      { overlay, applyViewport: () => {}, onComplete: () => {}, onTick: () => {} },
       sheetMap
     );
 
@@ -565,6 +572,7 @@ describe("ReplayEngine event dispatch", () => {
 
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -608,6 +616,7 @@ describe("ReplayEngine event dispatch", () => {
 
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -677,6 +686,7 @@ describe("ReplayEngine cross-realm (iframe)", () => {
     idMap.set(1, btn);
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -709,6 +719,7 @@ describe("ReplayEngine cross-realm (iframe)", () => {
     idMap.set(7, slider);
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });
@@ -731,6 +742,7 @@ describe("ReplayEngine cross-realm (iframe)", () => {
     idMap.set(1, cb);
     const engine = new ReplayEngine(doc, idMap, {
       overlay,
+      applyViewport: () => {},
       onComplete: () => {},
       onTick: () => {},
     });

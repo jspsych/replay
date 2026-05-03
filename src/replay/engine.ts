@@ -1,4 +1,9 @@
-import type { RecordedEvent, DomNode, StylesheetEvent } from "../schema/types.js";
+import type {
+  RecordedEvent,
+  DomNode,
+  StylesheetEvent,
+  ViewportState,
+} from "../schema/types.js";
 import {
   instantiateDom,
   removeFromMap,
@@ -9,15 +14,28 @@ import {
 import type { OverlayController } from "../ui/overlay.js";
 
 /**
- * The engine schedules and dispatches both per-trial events
- * (`RecordedEvent`) and session-level stylesheet events
- * (`StylesheetEvent`). They share the `type` and `t` discriminators, so they
- * can be merged into a single timeline by the caller.
+ * Synthesized event for a session-level `ViewportChange` that falls inside a
+ * trial's playback window. Constructed by the caller (Player) when merging
+ * `viewport_changes` into the trial timeline; not part of the on-disk schema.
  */
-export type SchedulableEvent = RecordedEvent | StylesheetEvent;
+export type ViewportChangeEvent = {
+  type: "viewport.change";
+  t: number;
+  vp: ViewportState;
+};
+
+/**
+ * The engine schedules and dispatches per-trial events (`RecordedEvent`),
+ * session-level stylesheet events (`StylesheetEvent`), and synthesized
+ * viewport-change events. They share the `type` and `t` discriminators, so
+ * they can be merged into a single timeline by the caller.
+ */
+export type SchedulableEvent = RecordedEvent | StylesheetEvent | ViewportChangeEvent;
 
 export interface EngineCallbacks {
   overlay: OverlayController;
+  /** Apply a viewport state (size + scale) to the stage. */
+  applyViewport: (vp: ViewportState) => void;
   /** Called when all events have fired (reached t_end) */
   onComplete: () => void;
   /** Called each tick with current elapsed time in ms */
@@ -376,6 +394,10 @@ export class ReplayEngine {
 
       case "stylesheet.remove":
         removeStylesheet(ev.id, this.sheetMap);
+        break;
+
+      case "viewport.change":
+        this.callbacks.applyViewport(ev.vp);
         break;
 
       default:

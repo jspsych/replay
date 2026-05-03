@@ -3,7 +3,11 @@ import type {
   SessionRecording,
   StylesheetEvent,
 } from "../schema/types.js";
-import { ReplayEngine, type SchedulableEvent } from "../replay/engine.js";
+import {
+  ReplayEngine,
+  type SchedulableEvent,
+  type ViewportChangeEvent,
+} from "../replay/engine.js";
 import { ViewportManager } from "../replay/viewport.js";
 import {
   mountInitialDom,
@@ -155,17 +159,16 @@ export class Player {
 
     const trial = this.trials[listIndex];
 
-    // Apply viewport at trial start
-    if (trial.t_start != null) {
-      this.viewport.applyViewportAt(trial.t_start);
-    } else {
-      this.viewport.applyViewport(this.recording.viewport);
-    }
+    // Apply viewport at t_dom_ready so any resize that happened while the
+    // trial was being constructed is reflected in the initial state.
+    // Mid-trial viewport changes are scheduled into the timeline below.
+    const anchorT = trial.t_dom_ready ?? trial.t_start ?? 0;
+    this.viewport.applyViewportAt(anchorT);
 
     // Reset and rebuild stylesheets up to t_dom_ready. Plugins commonly inject
     // their CSS in the t_start..t_dom_ready window, so anchoring at t_start
     // would miss the layout-defining sheet.
-    this.resetStylesheetsAt(trial.t_dom_ready ?? trial.t_start ?? 0);
+    this.resetStylesheetsAt(anchorT);
 
     // Reconstruct initial DOM
     this.currentIdMap = new Map();
@@ -177,6 +180,7 @@ export class Player {
       this.currentIdMap,
       {
         overlay: this.overlay,
+        applyViewport: (vp) => this.viewport.applyViewport(vp),
         onComplete: () => this.handleTrialComplete(),
         onTick: (elapsed) => {
           const duration = this.trialDuration(trial);
@@ -211,10 +215,11 @@ export class Player {
   }
 
   /**
-   * Per-trial events merged with session-level stylesheet events that fall
-   * inside this trial's playback window (t_dom_ready, t_end). Stylesheet
-   * events at or before t_dom_ready are applied as part of the snapshot in
-   * `resetStylesheetsAt`, so they're excluded here to avoid double-apply.
+   * Per-trial events merged with session-level stylesheet events and viewport
+   * changes that fall inside this trial's playback window (t_dom_ready, t_end).
+   * Stylesheet events and viewport changes at or before t_dom_ready are
+   * applied as part of the trial-start snapshot (`resetStylesheetsAt`,
+   * `applyViewportAt`), so they're excluded here to avoid double-apply.
    */
   private trialTimeline(trial: TrialRecording): SchedulableEvent[] {
     const tDomReady = trial.t_dom_ready ?? 0;
@@ -222,8 +227,26 @@ export class Player {
     const midTrialSheets = (this.recording.stylesheet_events ?? []).filter(
       (e) => e.t > tDomReady && e.t < tEnd
     );
-    if (midTrialSheets.length === 0) return trial.events;
-    return [...trial.events, ...midTrialSheets];
+    const midTrialViewports: ViewportChangeEvent[] = (
+      this.recording.viewport_changes ?? []
+    )
+      .filter((c) => c.t > tDomReady && c.t < tEnd)
+      .map((c) => ({
+        type: "viewport.change",
+        t: c.t,
+        vp: {
+          w: c.w,
+          h: c.h,
+          dpr: c.dpr,
+          scale: c.scale,
+          offset_x: c.offset_x,
+          offset_y: c.offset_y,
+        },
+      }));
+    if (midTrialSheets.length === 0 && midTrialViewports.length === 0) {
+      return trial.events;
+    }
+    return [...trial.events, ...midTrialSheets, ...midTrialViewports];
   }
 
   /**
@@ -339,9 +362,11 @@ export class Player {
 
     this.engine?.cancelAll();
 
-    // Reset stylesheets to the snapshot at t_dom_ready; mid-trial stylesheet
-    // events get replayed by applyEventsSync below.
-    this.resetStylesheetsAt(trial.t_dom_ready ?? trial.t_start ?? 0);
+    // Reset viewport and stylesheets to the snapshot at t_dom_ready;
+    // mid-trial viewport/stylesheet events get replayed by applyEventsSync.
+    const anchorT = trial.t_dom_ready ?? trial.t_start ?? 0;
+    this.viewport.applyViewportAt(anchorT);
+    this.resetStylesheetsAt(anchorT);
 
     // Re-instantiate initial DOM
     this.currentIdMap = new Map();
@@ -353,6 +378,7 @@ export class Player {
       this.currentIdMap,
       {
         overlay: this.overlay,
+        applyViewport: (vp) => this.viewport.applyViewport(vp),
         onComplete: () => this.handleTrialComplete(),
         onTick: (elapsed) => {
           this.updateScrub(elapsed, duration);
