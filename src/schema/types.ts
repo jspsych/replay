@@ -158,6 +158,12 @@ export interface CanvasSnapshot {
   t: number;
   node: number;
   data_url: string;
+  /**
+   * Optional bounding box of changed pixels. When present, `data_url` is a
+   * cropped patch to composite at (x, y) without clearing the rest of the
+   * canvas. When omitted, `data_url` is a full-canvas baseline.
+   */
+  region?: { x: number; y: number; w: number; h: number };
 }
 
 export interface RngCall {

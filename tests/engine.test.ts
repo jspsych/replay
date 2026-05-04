@@ -217,6 +217,104 @@ describe("instantiateDom()", () => {
     expect(btn.getAttribute("class")).toBe("btn");
   });
 
+  it("strips javascript: URLs from href/src/action/formaction/xlink:href", () => {
+    const cases: { tag: string; attr: string }[] = [
+      { tag: "a", attr: "href" },
+      { tag: "img", attr: "src" },
+      { tag: "form", attr: "action" },
+      { tag: "button", attr: "formaction" },
+    ];
+    for (let i = 0; i < cases.length; i++) {
+      const { tag, attr } = cases[i];
+      const id = 100 + i;
+      instantiateDom(
+        {
+          id,
+          kind: "element",
+          tag,
+          attrs: { [attr]: "javascript:alert(1)", title: "ok" },
+          children: [],
+        },
+        container,
+        idMap,
+        doc
+      );
+      const el = idMap.get(id) as HTMLElement;
+      expect(el.getAttribute(attr)).toBeNull();
+      expect(el.getAttribute("title")).toBe("ok");
+    }
+  });
+
+  it("strips vbscript: URLs and tolerates whitespace/case", () => {
+    instantiateDom(
+      {
+        id: 200,
+        kind: "element",
+        tag: "a",
+        attrs: { href: "  JavaScript:alert(1)" },
+        children: [],
+      },
+      container,
+      idMap,
+      doc
+    );
+    expect((idMap.get(200) as HTMLAnchorElement).getAttribute("href")).toBeNull();
+
+    instantiateDom(
+      {
+        id: 201,
+        kind: "element",
+        tag: "a",
+        attrs: { href: "vbscript:foo" },
+        children: [],
+      },
+      container,
+      idMap,
+      doc
+    );
+    expect((idMap.get(201) as HTMLAnchorElement).getAttribute("href")).toBeNull();
+  });
+
+  it("preserves benign URL schemes", () => {
+    instantiateDom(
+      {
+        id: 210,
+        kind: "element",
+        tag: "a",
+        attrs: { href: "https://example.com/foo" },
+        children: [],
+      },
+      container,
+      idMap,
+      doc
+    );
+    expect((idMap.get(210) as HTMLAnchorElement).getAttribute("href")).toBe(
+      "https://example.com/foo"
+    );
+  });
+
+  it("rewrites <script> as inert <template> so it can't execute", () => {
+    instantiateDom(
+      {
+        id: 300,
+        kind: "element",
+        tag: "script",
+        attrs: { type: "text/javascript" },
+        children: [{ id: 301, kind: "text", text: "window.__pwned = true;" }],
+      },
+      container,
+      idMap,
+      doc
+    );
+    const replaced = idMap.get(300) as HTMLElement;
+    expect(replaced.tagName.toLowerCase()).toBe("template");
+    // id is still resolvable (so later dom.attr/dom.text events for the script
+    // node don't silently no-op)
+    expect(replaced).toBeTruthy();
+    // The window-level side effect from the script must not have happened.
+    expect((globalThis as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+  });
+
   it("produces matching outerHTML for a simple fixture", () => {
     const node: DomNode = {
       id: 30,
@@ -241,9 +339,10 @@ describe("instantiateDom()", () => {
   });
 
   it("pins canvas display + width/height in CSS so the sandboxed iframe lays it out", () => {
-    // Background: with `sandbox=\"allow-same-origin\"` (no `allow-scripts`),
-    // Chromium does not treat <canvas> as a sized replaced element, so HTML
-    // width/height attrs alone collapse layout to 0×0. dom.ts pins via CSS.
+    // Background: even with `allow-scripts`, Chromium under sandbox can refuse
+    // to treat <canvas> as a sized replaced element from HTML width/height
+    // attrs alone, collapsing layout to 0×0 in some configurations. dom.ts
+    // pins display + size via CSS as defense.
     const node: DomNode = {
       id: 50,
       kind: "element",
@@ -294,6 +393,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -324,6 +424,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -362,6 +463,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -381,6 +483,41 @@ describe("ReplayEngine event dispatch", () => {
     expect(el.getAttribute("onclick")).toBeNull();
   });
 
+  it("strips javascript: URLs via dom.attr for security", async () => {
+    const { ReplayEngine } = await import("../src/replay/engine");
+
+    const doc = document.implementation.createHTMLDocument("test");
+    const a = doc.createElement("a");
+    a.setAttribute("href", "https://example.com/safe");
+    doc.body.appendChild(a);
+    const idMap = new Map<number, Node>();
+    idMap.set(1, a);
+
+    const overlay = {
+      moveCursor: () => {},
+      showClick: () => {},
+      showKey: () => {},
+      showEvent: () => {},
+      setBlurred: () => {},
+      hide: () => {},
+      show: () => {},
+    };
+
+    const engine = new ReplayEngine(doc, idMap, {
+      overlay,
+      applyViewport: () => {},
+      onComplete: () => {},
+      onTick: () => {},
+    });
+
+    engine.applyEventsSync(
+      [{ type: "dom.attr", t: 0, node: 1, name: "href", value: "javascript:alert(1)" }],
+      10
+    );
+    // The dangerous value was rejected; the previously safe value is preserved.
+    expect(a.getAttribute("href")).toBe("https://example.com/safe");
+  });
+
   it("handles empty events array gracefully", async () => {
     const { ReplayEngine } = await import("../src/replay/engine");
     const doc = document.implementation.createHTMLDocument("test");
@@ -389,6 +526,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -415,6 +553,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -446,6 +585,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -488,6 +628,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -517,6 +658,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: () => {},
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -565,6 +707,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: (label: string) => showKeyCalls.push(label),
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -609,6 +752,7 @@ describe("ReplayEngine event dispatch", () => {
       moveCursor: () => {},
       showClick: () => {},
       showKey: (label: string) => showKeyCalls.push(label),
+      showEvent: () => {},
       setBlurred: () => {},
       hide: () => {},
       show: () => {},
@@ -658,6 +802,7 @@ describe("ReplayEngine cross-realm (iframe)", () => {
     moveCursor: () => {},
     showClick: () => {},
     showKey: () => {},
+    showEvent: () => {},
     setBlurred: () => {},
     hide: () => {},
     show: () => {},

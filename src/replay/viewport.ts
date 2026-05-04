@@ -124,35 +124,25 @@ export class ViewportManager {
   }
 
   /**
-   * Prepare a container for mounting a recorded `initial_dom`.
-   * If the recorded root is `<body>`, the iframe's own body is reused: its
-   * children are cleared, its attributes are reset, and the body element is
-   * returned so the caller can apply the recorded body's attrs and append the
-   * recorded body's children directly. (Mounting the recorded body as a child
-   * of a wrapper div breaks the height: 100% chain that jsPsych centering
-   * depends on.)
-   *
-   * Otherwise a `#jspsych-content` div is created (or reused) inside body and
-   * returned, matching the legacy mount target.
+   * Prepare the iframe body for mounting a recorded `initial_dom`: clear its
+   * children and reset its attributes, then return the body element. The
+   * caller (`mountInitialDom`) decides whether to merge the recorded body
+   * into this element (when the recorded root is `<body>`) or append the
+   * recorded root as a child (for the layout-spine case where the root is a
+   * wrapping div). No `#jspsych-content` wrapper is synthesized here — the
+   * spine carries the proper id chain itself, and old recordings rooted at
+   * `#jspsych-content` mount cleanly as a direct body child.
    */
-  prepareMountPoint(rootIsBody: boolean): HTMLElement {
+  prepareMountPoint(): HTMLElement {
     this.ensureShell();
-    const doc = this.iframeDoc;
-    const body = doc.body;
+    const body = this.iframeDoc.body;
 
     while (body.firstChild) body.removeChild(body.firstChild);
     for (const attr of Array.from(body.attributes)) {
       body.removeAttribute(attr.name);
     }
 
-    if (rootIsBody) {
-      return body;
-    }
-
-    const div = doc.createElement("div");
-    div.id = "jspsych-content";
-    body.appendChild(div);
-    return div;
+    return body;
   }
 
   get iframeDoc(): Document {

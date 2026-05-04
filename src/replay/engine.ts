@@ -10,6 +10,7 @@ import {
   installStylesheet,
   updateStylesheet,
   removeStylesheet,
+  sanitizeAttr,
 } from "./dom.js";
 import type { OverlayController } from "../ui/overlay.js";
 
@@ -233,12 +234,13 @@ export class ReplayEngine {
       case "dom.attr": {
         const el = this.idMap.get(ev.node);
         if (!el || !(el instanceof this.iframeWin.Element)) return;
-        if (ev.name.startsWith("on")) return; // safety
         if (ev.value === null) {
           el.removeAttribute(ev.name);
         } else {
+          const sanitized = sanitizeAttr(ev.name, ev.value);
+          if (sanitized === null) return;
           try {
-            el.setAttribute(ev.name, ev.value);
+            el.setAttribute(ev.name, sanitized);
           } catch {
             // ignore invalid attribute names
           }
@@ -316,8 +318,11 @@ export class ReplayEngine {
         break;
 
       case "fullscreen.enter":
+        this.callbacks.overlay.showEvent("Entered fullscreen");
+        break;
+
       case "fullscreen.exit":
-        // Visual note only
+        this.callbacks.overlay.showEvent("Exited fullscreen");
         break;
 
       case "clipboard.copy":
@@ -372,10 +377,17 @@ export class ReplayEngine {
         const ctx = el.getContext("2d");
         if (!ctx) break;
         const img = new Image();
+        const region = ev.region;
         img.onload = () => {
           try {
-            ctx.clearRect(0, 0, el.width, el.height);
-            ctx.drawImage(img, 0, 0);
+            if (region) {
+              // Partial patch: composite at (x, y), preserve surrounding pixels.
+              ctx.drawImage(img, region.x, region.y);
+            } else {
+              // Full baseline: replace entire canvas contents.
+              ctx.clearRect(0, 0, el.width, el.height);
+              ctx.drawImage(img, 0, 0);
+            }
           } catch {
             // ignore (e.g., tainted canvas in strict modes)
           }

@@ -20,7 +20,7 @@ The app is an observational replayer for jsPsych session recordings. It does **n
 Only `schema_version: 1` is accepted (see `src/schema/types.ts`). Any other version throws in `validate()`. The schema mirrors `jspsych/jspsych` `packages/jspsych/src/modules/recording.ts` and is the source of truth for everything else in the codebase. When updating types, also update `validate()` and the test fixtures in `tests/engine.test.ts`. Stylesheet fields (`stylesheets`, `stylesheet_events`) are backfilled to `[]` for older recordings.
 
 ### The replay stage
-Recorded DOM is mounted inside an `<iframe sandbox="allow-same-origin">` (no `allow-scripts`) declared in `index.html`. Defence-in-depth: `instantiateDom()` and the `dom.attr` handler both strip `on*` attributes regardless of sandbox. When touching either of these paths, the security tests in `tests/engine.test.ts` enforce this — keep them passing.
+Recorded DOM is mounted inside an `<iframe sandbox="allow-same-origin allow-scripts">` declared in `index.html`. `allow-scripts` is required because Chromium suppresses canvas painting in sandboxed iframes without it (the canvas buffer accepts pixels but the surface never composites to the screen). Defense-in-depth happens at the DOM layer instead: `sanitizeAttr()` in `src/replay/dom.ts` strips `on*` event handler attributes and `javascript:`/`vbscript:` URLs from `href`/`src`/`action`/`formaction`/`xlink:href`, and `instantiateDom()` rewrites `<script>` (and any other tag in `INERT_TAGS`) as an inert `<template>` so it can't execute but its id still resolves for later events. The `dom.attr` handler in the engine routes through the same sanitizer. When touching any of these paths, keep the security tests in `tests/engine.test.ts` passing.
 
 ### Time model
 All event times `t` are in ms relative to `recording_started_at_perf`. Per-trial playback duration is `t_end - t_dom_ready` (see `Player.trialDuration`). The engine merges per-trial `RecordedEvent`s with session-level `StylesheetEvent`s into one timeline (`SchedulableEvent`) — both share the `type` + `t` shape.
@@ -43,4 +43,4 @@ The stylesheet snapshot is anchored at `t_dom_ready` (not `t_start`) because plu
 UI elements live in `index.html` and are looked up by id in `main.ts` — when adding controls, add the element there and pass the reference through `Player`'s constructor `elements` bag.
 
 ### What's not implemented (v0)
-Media playback, clipboard surface, and fullscreen visualization are logged-only. Don't add tests asserting full media replay until the engine handler is real.
+Media playback and clipboard surface are logged-only. Don't add tests asserting full media replay until the engine handler is real. Fullscreen enter/exit are surfaced via the overlay's event-badge (see `OverlayController.showEvent`); the iframe doesn't actually enter fullscreen.

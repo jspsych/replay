@@ -1,6 +1,41 @@
 import type { DomNode, ElementNode, StylesheetSnapshot } from "../schema/types.js";
 
 /**
+ * Attributes that carry URLs the browser will navigate to or fetch. We strip
+ * `javascript:` / `vbscript:` schemes from these to prevent recorded markup
+ * from executing script when the iframe runs with `allow-scripts`.
+ */
+const URL_ATTRS = new Set(["href", "src", "action", "formaction", "xlink:href"]);
+
+/**
+ * Returns the value to set for an attribute, or `null` to skip the attribute
+ * entirely. Strips inline event handlers (`on*`) and dangerous URL schemes.
+ *
+ * The replay iframe runs with `sandbox="allow-same-origin allow-scripts"` —
+ * `allow-scripts` is required because Chromium suppresses canvas painting
+ * without it. To preserve defense-in-depth we filter at the DOM-construction
+ * layer instead of relying on the sandbox alone.
+ */
+export function sanitizeAttr(name: string, value: string): string | null {
+  if (name.startsWith("on")) return null;
+  if (URL_ATTRS.has(name.toLowerCase())) {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed.startsWith("javascript:") || trimmed.startsWith("vbscript:")) {
+      return null;
+    }
+  }
+  return value;
+}
+
+/**
+ * Tags that we never instantiate as themselves — they would either execute
+ * code or load remote code on insertion. They are replaced with an inert
+ * `<template>` element so id-mapping and tree structure are preserved for
+ * any later events that target them.
+ */
+const INERT_TAGS = new Set(["script"]);
+
+/**
  * Instantiate a recorded DomNode tree into real DOM nodes.
  * Populates idMap with recorded id → live Node entries.
  * Returns the live Node created.
@@ -14,14 +49,15 @@ export function instantiateDom(
   let liveNode: Node;
 
   if (node.kind === "element") {
-    const el = doc.createElement(node.tag);
+    const tagLower = node.tag.toLowerCase();
+    const elTag = INERT_TAGS.has(tagLower) ? "template" : node.tag;
+    const el = doc.createElement(elTag);
 
     for (const [name, value] of Object.entries(node.attrs)) {
-      // Skip event handler attributes for security — the iframe is sandboxed
-      // without allow-scripts, but defence-in-depth is still valuable.
-      if (name.startsWith("on")) continue;
+      const sanitized = sanitizeAttr(name, value);
+      if (sanitized === null) continue;
       try {
-        el.setAttribute(name, value);
+        el.setAttribute(name, sanitized);
       } catch {
         // Ignore invalid attribute names (e.g. namespace prefixes)
       }
@@ -94,9 +130,10 @@ export function mountInitialDom(
   if (isBodyRoot) {
     const root = initialDom as ElementNode;
     for (const [name, value] of Object.entries(root.attrs)) {
-      if (name.startsWith("on")) continue;
+      const sanitized = sanitizeAttr(name, value);
+      if (sanitized === null) continue;
       try {
-        mountPoint.setAttribute(name, value);
+        mountPoint.setAttribute(name, sanitized);
       } catch {
         // ignore invalid attribute names
       }

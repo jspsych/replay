@@ -6,13 +6,16 @@ export interface OverlayController {
   moveCursor(x: number, y: number): void;
   showClick(): void;
   showKey(label: string): void;
+  /** Show a non-key annotation badge (e.g. fullscreen enter/exit). */
+  showEvent(label: string): void;
   setBlurred(blurred: boolean): void;
   hide(): void;
   show(): void;
 }
 
-const MAX_KEYS = 3;
-const KEY_DISPLAY_MS = 1000;
+const MAX_BADGES = 3;
+const BADGE_DISPLAY_MS = 1000;
+const EVENT_DISPLAY_MS = 1500;
 
 export function createOverlay(
   cursorEl: HTMLElement,
@@ -20,6 +23,21 @@ export function createOverlay(
   focusOverlayEl: HTMLElement
 ): OverlayController {
   let clickTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function addBadge(container: HTMLElement, label: string, className: string, ttl: number) {
+    while (container.children.length >= MAX_BADGES) {
+      container.removeChild(container.firstChild!);
+    }
+    const badge = document.createElement("div");
+    badge.className = className;
+    badge.textContent = label;
+    container.appendChild(badge);
+    setTimeout(() => {
+      if (badge.parentNode === container) {
+        container.removeChild(badge);
+      }
+    }, ttl);
+  }
 
   return {
     moveCursor(x: number, y: number) {
@@ -38,21 +56,11 @@ export function createOverlay(
     },
 
     showKey(label: string) {
-      // Remove excess badges
-      while (keystrokeEl.children.length >= MAX_KEYS) {
-        keystrokeEl.removeChild(keystrokeEl.firstChild!);
-      }
-      const badge = document.createElement("div");
-      badge.className = "key-badge";
-      badge.textContent = label;
-      keystrokeEl.appendChild(badge);
+      addBadge(keystrokeEl, label, "key-badge", BADGE_DISPLAY_MS);
+    },
 
-      // Auto-remove after animation
-      setTimeout(() => {
-        if (badge.parentNode === keystrokeEl) {
-          keystrokeEl.removeChild(badge);
-        }
-      }, KEY_DISPLAY_MS);
+    showEvent(label: string) {
+      addBadge(keystrokeEl, label, "event-badge", EVENT_DISPLAY_MS);
     },
 
     setBlurred(blurred: boolean) {

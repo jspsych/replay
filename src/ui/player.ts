@@ -1,7 +1,7 @@
 import type {
   TrialRecording,
   SessionRecording,
-  StylesheetEvent,
+  StylesheetSnapshot,
 } from "../schema/types.js";
 import {
   ReplayEngine,
@@ -12,7 +12,6 @@ import { ViewportManager } from "../replay/viewport.js";
 import {
   mountInitialDom,
   installStylesheet,
-  updateStylesheet,
   removeStylesheet,
 } from "../replay/dom.js";
 import type { OverlayController } from "./overlay.js";
@@ -199,11 +198,7 @@ export class Player {
   }
 
   private mountInitialDom(initialDom: TrialRecording["initial_dom"]): void {
-    const rootIsBody =
-      initialDom !== null &&
-      initialDom.kind === "element" &&
-      initialDom.tag.toLowerCase() === "body";
-    const mountPoint = this.viewport.prepareMountPoint(rootIsBody);
+    const mountPoint = this.viewport.prepareMountPoint();
     if (initialDom !== null) {
       mountInitialDom(initialDom, mountPoint, this.currentIdMap, this.viewport.iframeDoc);
     }
@@ -250,42 +245,66 @@ export class Player {
   }
 
   /**
-   * Tear down any installed stylesheets, then reinstall the recording's
-   * initial snapshot and replay every session-level stylesheet event with
-   * `t <= upToT`. Used at trial selection / seek so the iframe matches the
-   * stylesheet state recorded at that point in the session.
-   *
-   * Mid-trial stylesheet events (t_dom_ready < t < t_end) are applied here
-   * but not yet scheduled across trial playback time.
+   * Bring the iframe stylesheet state in line with what the recording had at
+   * `upToT` (the snapshot at t=0 plus every session-level stylesheet event
+   * with `t <= upToT`). Diff-based: sheets already installed with matching
+   * content are left alone, so seeking within a trial doesn't tear down and
+   * re-add the cascade — which (in particular for `<link>` sheets) flashes
+   * unstyled content before the new sheet applies.
    */
   private resetStylesheetsAt(upToT: number): void {
     const doc = this.viewport.iframeDoc;
-    for (const id of Array.from(this.currentSheetMap.keys())) {
-      removeStylesheet(id, this.currentSheetMap);
-    }
 
+    // Compute the desired sheet state at upToT.
+    const desired = new Map<number, StylesheetSnapshot>();
     for (const sheet of this.recording.stylesheets ?? []) {
-      installStylesheet(sheet, doc, this.currentSheetMap);
+      desired.set(sheet.id, sheet);
     }
-
-    const events: StylesheetEvent[] = this.recording.stylesheet_events ?? [];
-    for (const ev of events) {
+    for (const ev of this.recording.stylesheet_events ?? []) {
       if (ev.t > upToT) break;
-      this.applyStylesheetEvent(ev);
+      if (ev.type === "stylesheet.add") {
+        desired.set(ev.sheet.id, ev.sheet);
+      } else if (ev.type === "stylesheet.remove") {
+        desired.delete(ev.id);
+      } else if (ev.type === "stylesheet.update") {
+        const cur = desired.get(ev.id);
+        if (!cur) continue;
+        // Update events carry replacement CSS. If the current desired sheet
+        // is a link without captured CSS, promote it to inline so the new CSS
+        // text is what we install.
+        if (cur.kind === "inline") {
+          desired.set(ev.id, { ...cur, css: ev.css });
+        } else {
+          desired.set(ev.id, { id: cur.id, kind: "inline", css: ev.css, media: cur.media });
+        }
+      }
     }
-  }
 
-  private applyStylesheetEvent(ev: StylesheetEvent): void {
-    switch (ev.type) {
-      case "stylesheet.add":
-        installStylesheet(ev.sheet, this.viewport.iframeDoc, this.currentSheetMap);
-        break;
-      case "stylesheet.update":
-        updateStylesheet(ev.id, ev.css, this.currentSheetMap);
-        break;
-      case "stylesheet.remove":
-        removeStylesheet(ev.id, this.currentSheetMap);
-        break;
+    // Remove any installed sheets no longer desired.
+    for (const id of Array.from(this.currentSheetMap.keys())) {
+      if (!desired.has(id)) {
+        removeStylesheet(id, this.currentSheetMap);
+      }
+    }
+
+    // For each desired sheet, install if missing or update inline css if
+    // content changed. Link sheets without captured CSS are left in place
+    // once installed (replacing them would refetch + flash).
+    for (const [id, sheet] of desired) {
+      const existing = this.currentSheetMap.get(id);
+      if (!existing) {
+        installStylesheet(sheet, doc, this.currentSheetMap);
+        continue;
+      }
+      if (existing.tagName.toLowerCase() === "style" && sheet.css !== null) {
+        if (existing.textContent !== sheet.css) {
+          existing.textContent = sheet.css;
+        }
+      } else if (existing.tagName.toLowerCase() === "link" && sheet.kind === "inline") {
+        // Desired changed kind from link to inline — replace.
+        removeStylesheet(id, this.currentSheetMap);
+        installStylesheet(sheet, doc, this.currentSheetMap);
+      }
     }
   }
 
