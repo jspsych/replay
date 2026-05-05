@@ -46,7 +46,6 @@ export class Player {
   private readonly scrubBar: HTMLInputElement;
   private readonly timeDisplay: HTMLElement;
   private readonly speedSelect: HTMLSelectElement;
-  private readonly trialSelect: HTMLSelectElement;
   private readonly autoplayCheckbox: HTMLInputElement;
 
   constructor(
@@ -62,7 +61,6 @@ export class Player {
       scrubBar: HTMLInputElement;
       timeDisplay: HTMLElement;
       speedSelect: HTMLSelectElement;
-      trialSelect: HTMLSelectElement;
       autoplayCheckbox: HTMLInputElement;
     }
   ) {
@@ -79,12 +77,10 @@ export class Player {
     this.scrubBar = elements.scrubBar;
     this.timeDisplay = elements.timeDisplay;
     this.speedSelect = elements.speedSelect;
-    this.trialSelect = elements.trialSelect;
     this.autoplayCheckbox = elements.autoplayCheckbox;
     this.autoAdvance = this.autoplayCheckbox.checked;
 
     this.bindEvents();
-    this.populateTrialSelect();
   }
 
   private bindEvents(): void {
@@ -92,11 +88,6 @@ export class Player {
     this.restartBtn.addEventListener("click", () => this.restartCurrentTrial());
     this.prevBtn.addEventListener("click", () => this.jumpTrial(-1));
     this.nextBtn.addEventListener("click", () => this.jumpTrial(1));
-
-    this.trialSelect.addEventListener("change", () => {
-      const idx = Number(this.trialSelect.value);
-      this.selectTrial(idx);
-    });
 
     this.speedSelect.addEventListener("change", () => {
       this.speed = Number(this.speedSelect.value);
@@ -130,17 +121,6 @@ export class Player {
     });
   }
 
-  private populateTrialSelect(): void {
-    this.trialSelect.innerHTML = "";
-    for (let i = 0; i < this.trials.length; i++) {
-      const t = this.trials[i];
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = `Trial ${t.trial_index}: ${t.plugin || "?"}`;
-      this.trialSelect.appendChild(opt);
-    }
-  }
-
   /** Stop all playback. */
   stop(): void {
     this.engine?.cancelAll();
@@ -154,7 +134,6 @@ export class Player {
     this.overlay.hide();
 
     this.currentListIndex = listIndex;
-    this.trialSelect.value = String(listIndex);
 
     const trial = this.trials[listIndex];
 

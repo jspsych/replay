@@ -28,7 +28,6 @@ const nextTrialBtn = document.getElementById("next-trial-btn") as HTMLButtonElem
 const scrubBar = document.getElementById("scrub-bar") as HTMLInputElement;
 const timeDisplay = document.getElementById("time-display") as HTMLSpanElement;
 const speedSelect = document.getElementById("speed-select") as HTMLSelectElement;
-const trialSelect = document.getElementById("trial-select") as HTMLSelectElement;
 const autoplayCheckbox = document.getElementById("autoplay-checkbox") as HTMLInputElement;
 
 const labelTrialEl = document.getElementById("label-trial") as HTMLSpanElement;
@@ -127,19 +126,33 @@ document.addEventListener("keydown", (e) => {
 
 // ── File loading ──────────────────────────────────────────────────────────────
 
-function loadFile(file: File): void {
+async function loadFile(file: File): Promise<void> {
   clearError();
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const recording = validate(reader.result as string);
-      initReplay(recording, file.name);
-    } catch (err) {
-      showError((err as Error).message);
-    }
-  };
-  reader.onerror = () => showError("Failed to read file");
-  reader.readAsText(file);
+  try {
+    const text = (await isGzipped(file)) ? await decompressGzip(file) : await file.text();
+    const recording = validate(text);
+    initReplay(recording, file.name);
+  } catch (err) {
+    showError((err as Error).message);
+  }
+}
+
+// Detect gzip by filename or by the 0x1f 0x8b magic bytes — jsPsych's
+// `.json.gz` export is gzip, but some servers/users may rename or strip
+// extensions, so fall back to sniffing the header.
+async function isGzipped(file: File): Promise<boolean> {
+  if (/\.gz$/i.test(file.name)) return true;
+  if (file.type === "application/gzip" || file.type === "application/x-gzip") return true;
+  const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+  return head[0] === 0x1f && head[1] === 0x8b;
+}
+
+async function decompressGzip(file: File): Promise<string> {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("This browser does not support gzip decompression");
+  }
+  const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).text();
 }
 
 function initReplay(recording: SessionRecording, fileName: string): void {
@@ -203,7 +216,6 @@ function initReplay(recording: SessionRecording, fileName: string): void {
       scrubBar,
       timeDisplay,
       speedSelect,
-      trialSelect,
       autoplayCheckbox,
     }
   );

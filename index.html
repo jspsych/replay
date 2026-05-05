@@ -614,7 +614,7 @@
         text-align: right;
       }
 
-      #speed-select, #trial-select {
+      #speed-select {
         font-size: 13px;
         color: var(--ink-2);
         background: transparent;
@@ -624,14 +624,13 @@
         cursor: pointer;
       }
 
-      #speed-select:hover, #trial-select:hover { border-color: var(--rule-strong); }
-      #speed-select:focus-visible, #trial-select:focus-visible {
+      #speed-select:hover { border-color: var(--rule-strong); }
+      #speed-select:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
       }
 
       #trial-nav { display: flex; align-items: center; gap: 2px; }
-      #trial-select { max-width: 240px; }
 
       #autoplay-toggle {
         display: inline-flex;
@@ -751,7 +750,7 @@
     <header id="app-header">
       <h1>jsPsych <em>Replay</em></h1>
       <button id="load-btn">Load Recording</button>
-      <input type="file" id="file-input" accept=".json" />
+      <input type="file" id="file-input" accept=".json,.json.gz,.gz,application/json,application/gzip" />
       <span id="header-meta"></span>
     </header>
     <div id="error-banner"></div>
@@ -766,7 +765,7 @@
         </p>
         <div id="welcome-actions">
           <button id="welcome-load-btn" class="primary-btn">Load Recording</button>
-          <span id="drop-hint">or drop a .json file anywhere on this window</span>
+          <span id="drop-hint">or drop a .json or .json.gz file anywhere on this window</span>
         </div>
         <div class="keyhints">
           <span><kbd>Space</kbd>play / pause</span>
@@ -839,7 +838,6 @@
               <input type="checkbox" id="autoplay-checkbox" checked />
               <span>auto-advance</span>
             </label>
-            <select id="trial-select" title="Jump to trial" aria-label="Jump to trial"></select>
           </div>
 
           <div id="trial-data-panel">
